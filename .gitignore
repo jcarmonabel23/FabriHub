@@ -1,0 +1,7 @@
+.env
+node_modules/
+dist/
+server.mjs
+backups/*
+!backups/.gitkeep
+coverage/

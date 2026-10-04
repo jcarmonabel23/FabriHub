@@ -1,0 +1,209 @@
+# =====================================================================
+#  FabriHub · Planificación y Control de la Producción e Inventarios
+#  Implementación de la tesis UCAB (Palma, G.) con la arquitectura de DaviHub.
+#
+#  Arranque:   cp .env.example .env   (cambiar TODOS los secretos)
+#              docker compose up -d --build
+#  Sólo BD:    docker compose up -d db
+#  pgAdmin:    docker compose --profile tools up -d   -> http://127.0.0.1:5050
+#  Reset BD:   docker compose down -v   (vuelve a ejecutar db/init)
+# =====================================================================
+name: fabrihub
+
+x-endurecido: &endurecido
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  # ------------------------------------------------------------ Servicios de datos
+  db:
+    <<: *endurecido
+    image: postgres:16-alpine
+    container_name: fabrihub-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}                 # superusuario: sólo DDL / migraciones
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --encoding=UTF8 --locale=C.UTF-8"
+      TZ: ${TZ}
+      PGTZ: ${TZ}
+      APP_DB_USER: ${APP_DB_USER}                     # usado por db/init/99999_app_role.sh
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_min_duration_statement=1000
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks: [red_datos]
+    # La BD NO se publica al host. Para conectar DBeaver en desarrollo, descomentar:
+    # ports: ["127.0.0.1:5433:5432"]
+    healthcheck:
+      # Por TCP: durante initdb el servidor solo escucha por socket, así "healthy" = línea base lista.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ------------------------------------------------------------ Migraciones (fase 3 en adelante)
+  # Corre una vez en cada "up" y termina. La API no arranca hasta que termine bien.
+  migrate:
+    image: postgres:16-alpine
+    container_name: fabrihub-migrate
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+    entrypoint: ["sh", "/migrate.sh"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_DB_USER: ${APP_DB_USER}
+    volumes:
+      - ./db/migrate.sh:/migrate.sh:ro
+      - ./db/migrations:/migrations:ro
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [red_datos]
+
+  # ------------------------------------------------------------ Servicios empresariales
+  api:
+    <<: *endurecido
+    build: ./api
+    container_name: fabrihub-api
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: 4000
+      TZ: ${TZ}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${APP_DB_USER}                         # nunca el superusuario
+      DB_PASSWORD: ${APP_DB_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL}
+      JWT_REFRESH_TTL_HOURS: ${JWT_REFRESH_TTL_HOURS}
+      SESSION_IDLE_MINUTES: ${SESSION_IDLE_MINUTES}
+      OTP_TTL_MINUTES: ${OTP_TTL_MINUTES}
+      OTP_MAX_ATTEMPTS: ${OTP_MAX_ATTEMPTS}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS}
+      LOGIN_LOCK_MINUTES: ${LOGIN_LOCK_MINUTES}
+      AUTH_RATE_LIMIT: ${AUTH_RATE_LIMIT}
+      PASSWORD_HISTORY: ${PASSWORD_HISTORY}
+      COOKIE_SECURE: ${COOKIE_SECURE}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT}             # dev | qa | prod  (filtra is_show_* de módulos)
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_FROM: ${SMTP_FROM}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD}
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    networks: [red_datos, red_app]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  # ------------------------------------------------------------ Servicios de usuario
+  # Igual que davihub-front: Express (server.mjs) sirve la SPA de Vite y hace de
+  # proxy /api -> api:4000. El navegador sólo ve un origen; la API no se publica.
+  front:
+    <<: *endurecido
+    build:
+      context: ./front
+      args:
+        VITE_PUBLIC_ENCRIP_KEY: ${VITE_PUBLIC_ENCRIP_KEY}
+        VITE_APP_VERSION: ${VITE_APP_VERSION}
+        VITE_ENVIRONMENT: ${APP_ENVIRONMENT}
+    container_name: fabrihub-front
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      API_TARGET: http://api:4000
+    ports:
+      - "${WEB_PORT}:3005"
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [red_app]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3005/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ------------------------------------------------------------ Correo (OTP / alertas) en desarrollo
+  mailpit:
+    <<: *endurecido
+    image: axllent/mailpit:latest
+    container_name: fabrihub-mailpit
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT}:8025"           # bandeja web para leer los OTP
+    networks: [red_app]
+
+  # ------------------------------------------------------------ Respaldos automáticos
+  backup:
+    <<: *endurecido
+    image: prodrigestivill/postgres-backup-local:16
+    container_name: fabrihub-backup
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_EXTRA_OPTS: "-Fc -Z6"
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+      TZ: ${TZ}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db: { condition: service_healthy }
+    networks: [red_datos]
+
+  # ------------------------------------------------------------ pgAdmin (sólo local, perfil tools)
+  pgadmin:
+    <<: *endurecido
+    image: dpage/pgadmin4:8
+    container_name: fabrihub-pgadmin
+    profiles: ["tools"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+    ports:
+      - "127.0.0.1:${PGADMIN_PORT}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks: [red_datos, red_app]
+
+networks:
+  red_app:                 # front <-> api <-> mailpit
+  red_datos:               # api <-> db <-> backup   (sin salida a internet)
+    internal: true
+
+volumes:
+  pg_data:
+  pgadmin_data:

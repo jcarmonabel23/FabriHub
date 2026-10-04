@@ -1,0 +1,51 @@
+/**
+ * @project FabriHub - Front
+ * @file src/global/assets/index.css
+ * @description Estilos globales: fuentes, Mantine, Tailwind y tokens de marca (orden de DaviHub)
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap");
+@import "@mantine/core/styles.css";
+@import "@mantine/dates/styles.css";
+@import "@mantine/notifications/styles.css";
+@import "tailwindcss";
+
+/* Paleta petrol disponible en Tailwind como bg-brand-50, text-brand-600, etc. */
+@theme {
+  --color-brand-50: #e8f6f8;
+  --color-brand-100: #d2e9ee;
+  --color-brand-200: #a6d2dc;
+  --color-brand-300: #76bac9;
+  --color-brand-400: #4fa5b9;
+  --color-brand-500: #3797ae;
+  --color-brand-600: #288fa9;
+  --color-brand-700: #167c94;
+  --color-brand-800: #036e85;
+  --color-brand-900: #005f74;
+  --font-sans: "Montserrat", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #f9fafb; /* gray-50, como DaviHub */
+  color: #111827;
+  font-family: "Montserrat", sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

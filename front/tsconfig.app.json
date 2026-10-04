@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@global/*": ["./src/global/*"],
+      "@assets/*": ["./src/global/assets/*"],
+      "@atoms/*": ["./src/global/atoms/*"],
+      "@clients/*": ["./src/global/clients/*"],
+      "@config/*": ["./src/global/config/*"],
+      "@modules/*": ["./src/global/modules/*"],
+      "@store/*": ["./src/global/store/*"],
+      "@utils/*": ["./src/global/utils/*"],
+      "@navigation/*": ["./src/navigation/*"],
+      "@layouts/*": ["./src/layouts/*"],
+      "@auth/*": ["./src/app/auth/*"],
+      "@dashboard/*": ["./src/app/dashboard/*"],
+      "@admin/*": ["./src/app/admin/*"]
+    }
+  },
+  "include": ["src"]
+}
