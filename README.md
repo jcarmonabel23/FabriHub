@@ -23,6 +23,8 @@ Por último, el cambio obligatorio de contraseña.
 
 Para reiniciar la BD desde cero (vuelve a ejecutar `db/init`): `docker compose down -v`.
 
+**Producción** (Oracle Cloud, HTTPS con Caddy, correo SMTP real): ver [DEPLOY.md](DEPLOY.md).
+
 ## Desarrollo
 
 ```bash

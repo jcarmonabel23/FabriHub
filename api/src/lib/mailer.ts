@@ -1,7 +1,8 @@
 /**
  * @project FabriHub - API
  * @file src/lib/mailer.ts
- * @description Envío de correos (OTP, contraseñas temporales). En desarrollo llegan a mailpit.
+ * @description Envío de correos (OTP, contraseñas temporales, alertas). En desarrollo llegan a mailpit;
+ *              en producción, al proveedor SMTP configurado (SMTP_USER / SMTP_PASSWORD).
  */
 
 import nodemailer from "nodemailer";
@@ -11,7 +12,10 @@ import { logger } from "./logger.js";
 const transport = nodemailer.createTransport({
   host: config.SMTP_HOST,
   port: config.SMTP_PORT,
-  secure: false
+  secure: config.SMTP_SECURE,
+  // Con credenciales (proveedor real) se exige cifrado; mailpit en desarrollo va sin autenticación.
+  requireTLS: Boolean(config.SMTP_USER) && !config.SMTP_SECURE,
+  auth: config.SMTP_USER ? { user: config.SMTP_USER, pass: config.SMTP_PASSWORD } : undefined
 });
 
 const BRAND = "#167c94";

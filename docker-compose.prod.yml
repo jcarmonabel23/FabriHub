@@ -1,0 +1,49 @@
+# =====================================================================
+#  FabriHub · override de PRODUCCIÓN (servidor con IP pública)
+#
+#    docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+#  Cambios respecto al de desarrollo:
+#   · Caddy delante: HTTPS automático (Let's Encrypt) en 80/443. Es lo único publicado.
+#   · El front ya no publica su puerto: solo lo alcanza Caddy por la red interna.
+#   · Mailpit no se levanta (perfil dev): el correo sale por el proveedor SMTP real.
+#   · La API confía en 2 proxies (Caddy + front) para ver la IP real del cliente.
+# =====================================================================
+
+services:
+  caddy:
+    restart: unless-stopped
+    image: caddy:2-alpine
+    container_name: fabrihub-caddy
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"          # HTTP/3
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # certificados: NO borrar (Let's Encrypt limita las emisiones)
+      - caddy_config:/config
+    depends_on:
+      front: { condition: service_healthy }
+    networks: [red_app]
+
+  front:
+    ports: !reset []
+
+  api:
+    environment:
+      TRUST_PROXY: 2
+
+  mailpit:
+    profiles: ["dev"]
+
+volumes:
+  caddy_data:
+  caddy_config:

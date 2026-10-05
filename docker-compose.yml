@@ -104,6 +104,10 @@ services:
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
       SMTP_FROM: ${SMTP_FROM}
+      SMTP_USER: ${SMTP_USER:-}                       # vacíos = mailpit sin autenticación
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-1}                  # proxies delante de la API (front = 1; Caddy + front = 2)
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:8080}   # enlaces de los correos de alertas
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD}

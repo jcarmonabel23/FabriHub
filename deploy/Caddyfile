@@ -1,0 +1,19 @@
+# =====================================================================
+#  FabriHub · Caddy (proxy HTTPS de producción)
+#  Saca y renueva solo el certificado de {$DOMAIN}. HTTP redirige a HTTPS.
+# =====================================================================
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# El front (Express) sirve la SPA y hace de proxy /api → api:4000; ya pone CSP y demás cabeceras.
+	reverse_proxy front:3005
+}
