@@ -20,7 +20,7 @@ import { config } from "../config.js";
 import { one, query } from "../db.js";
 import { HttpError, forbidden } from "../lib/http.js";
 
-const ENV_COLUMN = { dev: "is_show_dev", qa: "is_show_qa", prod: "is_show_prod" }[config.APP_ENVIRONMENT];
+export const ENV_COLUMN = { dev: "is_show_dev", qa: "is_show_qa", prod: "is_show_prod" }[config.APP_ENVIRONMENT];
 
 interface ModuleAccessRow {
   is_public: boolean;

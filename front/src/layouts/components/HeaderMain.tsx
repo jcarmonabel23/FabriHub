@@ -1,7 +1,7 @@
 /**
  * @project FabriHub - Front
  * @file src/layouts/components/HeaderMain.tsx
- * @description Header superior (estructura DaviHub): logo a la izquierda, entorno y usuario a la derecha
+ * @description Header superior (estructura DaviHub): logo a la izquierda; entorno, campana y usuario a la derecha
  */
 
 import { Badge } from "@mantine/core";
@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import { Logo } from "@atoms/brand/Logo";
 import { coreAuth } from "@auth/store/coreAuth";
 import { ENVIRONMENT_LABEL } from "@config/environment";
+import NotificationBell from "./NotificationBell";
 import UserProfileMenu from "./UserProfileMenu";
 
 const ENV_COLOR: Record<string, string> = { dev: "orange", qa: "violet", prod: "teal" };
@@ -26,6 +27,7 @@ export default function HeaderMain() {
             {ENVIRONMENT_LABEL[environment] ?? environment}
           </Badge>
         )}
+        <NotificationBell />
         <div className="w-px h-6 bg-gray-200 mx-1 hidden sm:block" />
         <UserProfileMenu />
       </div>

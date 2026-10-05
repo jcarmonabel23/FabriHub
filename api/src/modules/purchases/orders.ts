@@ -363,18 +363,22 @@ export const previewOrder = handler({ body: orderBody }, async ({ body }) => {
   return { exchangeRate: b.header.exchangeRate, currencyId: b.header.currencyId, lines: b.lines, totals: b.totals };
 });
 
+/** Alta de una OC en borrador dentro de una transacción (la usa también el MRP) */
+export async function insertPurchaseOrder(client: pg.PoolClient, input: z.input<typeof orderBody>) {
+  const body = orderBody.parse(input);
+  const built = await buildOrder(client, body);
+  const row = await one<{ id: string; number: string }>(
+    `INSERT INTO purchase_orders (number, supplier_id, order_date, warehouse_id, currency_id, created_by, updated_by)
+     VALUES (fn_next_document_number('PO'), $1, $2, $3, $4, fn_current_app_user(), fn_current_app_user()) RETURNING id, number`,
+    [body.supplierId, body.orderDate, body.warehouseId, built.header.currencyId],
+    client
+  );
+  await persistOrder(client, row!.id, built);
+  return row!;
+}
+
 export const createOrder = handler({ body: orderBody }, async ({ body, req, res }) => {
-  const id = await withTx(txCtx(req), async (client) => {
-    const built = await buildOrder(client, body);
-    const row = await one<{ id: string }>(
-      `INSERT INTO purchase_orders (number, supplier_id, order_date, warehouse_id, currency_id, created_by, updated_by)
-       VALUES (fn_next_document_number('PO'), $1, $2, $3, $4, fn_current_app_user(), fn_current_app_user()) RETURNING id`,
-      [body.supplierId, body.orderDate, body.warehouseId, built.header.currencyId],
-      client
-    );
-    await persistOrder(client, row!.id, built);
-    return row!.id;
-  });
+  const id = await withTx(txCtx(req), async (client) => (await insertPurchaseOrder(client, body)).id);
   res.status(201);
   return orderDetail(id);
 });

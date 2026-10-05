@@ -11,6 +11,8 @@ import * as inventory from "./inventory.mjs";
 import * as purchases from "./purchases.mjs";
 import * as production from "./production.mjs";
 import * as sales from "./sales.mjs";
+import * as planning from "./planning.mjs";
+import * as dashboard from "./dashboard.mjs";
 import * as ratelimit from "./ratelimit.mjs";
 
 const SUITES = [
@@ -20,6 +22,8 @@ const SUITES = [
   ["Fase 4 · Compras y Calidad", purchases],
   ["Fase 5 · Producción", production],
   ["Fase 6 · Ventas", sales],
+  ["Fase 7 · Planificación", planning],
+  ["Fase 8 · Tablero y alertas", dashboard],
   ["Límite por IP", ratelimit]
 ];
 

@@ -13,6 +13,9 @@ import ChangePasswordPage from "@auth/change-password/Page";
 import ForgotPasswordPage from "@auth/forgot-password/Page";
 import ResetPasswordPage from "@auth/reset-password/Page";
 import DashboardPage from "@dashboard/Page";
+import IndicatorsPage from "@dashboard/indicators/Page";
+import AlertsPage from "@dashboard/alerts/Page";
+import ReportsPage from "@dashboard/reports/Page";
 import PasswordPage from "@/app/account/PasswordPage";
 import UsersAdminPage from "@admin/users/Page";
 import RolesAdminPage from "@admin/roles/Page";
@@ -43,6 +46,7 @@ import FormulasPage from "@/app/production/formulas/Page";
 import RoutesPage from "@/app/production/routes/Page";
 import CentersPage from "@/app/production/centers/Page";
 import StagesPage from "@/app/production/stages/Page";
+import PlanningPage from "@/app/production/planning/Page";
 import SalesOrdersPage from "@/app/sales/orders/Page";
 import DeliveryNotesPage from "@/app/sales/delivery-notes/Page";
 import CustomersPage from "@/app/sales/customers/Page";
@@ -72,6 +76,17 @@ export default function AppRouter() {
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/account/password" element={<PasswordPage />} />
+
+          {/* Tablero y alertas (fase 8) */}
+          <Route element={<ProtectedModuleRoute moduleCode="DSH_INDICATORS" />}>
+            <Route path="/dashboard/indicators" element={<IndicatorsPage />} />
+          </Route>
+          <Route element={<ProtectedModuleRoute moduleCode="DSH_ALERTS" />}>
+            <Route path="/dashboard/alerts" element={<AlertsPage />} />
+          </Route>
+          <Route element={<ProtectedModuleRoute moduleCode="DSH_REPORTS" />}>
+            <Route path="/dashboard/reports" element={<ReportsPage />} />
+          </Route>
 
           {/* Seguridad (fase 1) */}
           <Route element={<ProtectedModuleRoute rootCode="ADMIN" />}>
@@ -153,6 +168,9 @@ export default function AppRouter() {
           </Route>
 
           {/* Producción (fase 5) */}
+          <Route element={<ProtectedModuleRoute moduleCode="PRD_PLANNING" />}>
+            <Route path="/production/planning" element={<PlanningPage />} />
+          </Route>
           <Route element={<ProtectedModuleRoute moduleCode="PRD_ORDERS" />}>
             <Route path="/production/orders" element={<ProductionOrdersPage />} />
           </Route>

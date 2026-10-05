@@ -42,6 +42,8 @@ const schema = z.object({
   SMTP_HOST: z.string().default("mailpit"),
   SMTP_PORT: z.coerce.number().default(1025),
   SMTP_FROM: z.string().default("FabriHub <no-reply@fabrihub.local>"),
+  /** URL con la que los usuarios abren FabriHub (enlaces de los correos de alertas) */
+  APP_PUBLIC_URL: z.url().default("http://localhost:8080").transform((v) => v.replace(/\/$/, "")),
 
   ADMIN_EMAIL: z.email(),
   ADMIN_INITIAL_PASSWORD: z.string().min(10)

@@ -52,8 +52,15 @@ export async function run() {
   check("/me trae módulos con permisos efectivos", adm?.permissions?.includes("configure"), adm);
   const visit = await call("POST", "/metrics/visit", { token: adminToken, body: { moduleCode: "ADM_USERS", path: "/admin/users" } });
   check("registro de visita a módulo", visit.status === 204, visit.json);
-  const offline = me.json?.modules?.find((m) => m.code === "PRD_PLANNING");
-  check("módulos de fases futuras llegan como fuera de servicio", offline?.isOffline === true);
+  // Poner un módulo fuera de servicio: llega marcado en /me y su API responde 503 MODULE_OFFLINE
+  const allModules = (await call("GET", "/admin/modules", { token: adminToken })).json;
+  const planning = (allModules.items ?? allModules).find((m) => m.code === "PRD_PLANNING");
+  await call("PATCH", `/admin/modules/${planning.id}`, { token: adminToken, body: { isOffline: true } });
+  const meOff = await call("GET", "/auth/me", { token: adminToken });
+  check("un módulo fuera de servicio llega marcado en la sesión", meOff.json?.modules?.find((m) => m.code === "PRD_PLANNING")?.isOffline === true);
+  const offApi = await call("GET", "/planning/periods", { token: adminToken });
+  check("y su API responde 503 MODULE_OFFLINE", offApi.status === 503 && offApi.code === "MODULE_OFFLINE", offApi.json);
+  await call("PATCH", `/admin/modules/${planning.id}`, { token: adminToken, body: { isOffline: false } });
 
   console.log("\n● Administración de usuarios y RBAC");
   const list = await call("GET", "/admin/users", { token: adminToken });

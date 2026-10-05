@@ -19,6 +19,9 @@ import { pool } from "./db.js";
 import { HttpError } from "./lib/http.js";
 import { logger } from "./lib/logger.js";
 import { adminRoutes } from "./modules/admin/routes.js";
+import { startAlertScheduler } from "./modules/dashboard/alerts.js";
+import { notificationsRoutes } from "./modules/dashboard/notifications.js";
+import { dashboardRoutes } from "./modules/dashboard/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { inventoryRoutes } from "./modules/inventory/routes.js";
 import { lookupsRoutes } from "./modules/lookups/routes.js";
@@ -26,6 +29,7 @@ import { metricsRoutes } from "./modules/metrics/routes.js";
 import { purchasesRoutes, qualityRoutes } from "./modules/purchases/routes.js";
 import { productionRoutes } from "./modules/production/routes.js";
 import { salesRoutes } from "./modules/sales/routes.js";
+import { planningRoutes } from "./modules/planning/routes.js";
 import { settingsRoutes } from "./modules/settings/routes.js";
 import { taxesRoutes } from "./modules/taxes/routes.js";
 import { authenticate } from "./security/authenticate.js";
@@ -77,6 +81,9 @@ v1.use("/purchases", purchasesRoutes);
 v1.use("/quality", qualityRoutes);
 v1.use("/production", productionRoutes);
 v1.use("/sales", salesRoutes);
+v1.use("/planning", planningRoutes);
+v1.use("/dashboard", dashboardRoutes);
+v1.use("/notifications", notificationsRoutes);
 app.use("/api/v1", v1);
 
 app.use((_req, res) => {
@@ -130,6 +137,7 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 bootstrap()
   .then(() => {
     app.listen(config.PORT, () => logger.info({ port: config.PORT, env: config.APP_ENVIRONMENT }, "[api] lista"));
+    startAlertScheduler();
   })
   .catch((err) => {
     logger.fatal({ err }, "[api] no se pudo arrancar");

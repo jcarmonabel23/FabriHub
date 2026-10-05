@@ -208,7 +208,7 @@ actividades de manufactura", 4.2.1). Si el tiempo aprieta, la fase 7 puede hacer
 
 ## 10. Estado actual
 
-- **Fases 0 a 6 terminadas** (ver README.md). Verificadas con `scripts/smoke.sh` (253/253) y probadas en el navegador.
+- **Fases 0 a 8 terminadas** (ver README.md). Verificadas con `scripts/smoke.sh` (330/330). Las fases 0 a 7 se probaron además en el navegador.
 - Fase 2: los catálogos comerciales quedaron en `00200–00201` (no en 000xx), porque dependen de `users`
   y de `fn_audit()`. Los tipos y estados de orden se crearán en las fases 4 y 6, junto con sus
   máquinas de estado. Las listas de precios pasan a Compras y Ventas.
@@ -239,7 +239,24 @@ actividades de manufactura", 4.2.1). Si el tiempo aprieta, la fase 7 puede hacer
   - Las reservas de venta usan `stock_reservations` (fase 5) con `source_module = 'SALES'`.
   - Devoluciones de clientes (DEV_CLIENTE) quedan fuera: la anulación de la nota reversa el despacho.
   - La pantalla de listas de precios es un solo componente (`app/pricing/PriceListsView`) para Compras y Ventas.
-- Siguiente paso: **fase 7** (Planificación: plan de ventas → MPS → MRP).
+- Fase 7:
+  - El MRP vive en la API (`modules/planning/mrp.ts`), no en una función SQL: es más legible para la defensa
+    y guarda cada corrida (`mrp_runs`, `mrp_results`, `mrp_suggestions`).
+  - Cubetas mensuales; el MPS ES la orden planificada de los terminados (no se vuelve a netear).
+  - La fecha de necesidad de un componente es el lanzamiento de su orden padre.
+  - `products.lead_time_days` es el tiempo de reposición.
+  - Se agregaron fórmulas de Ibuprofeno y Vitamina C (con sus insumos) para explotar todo el plan.
+  - Pedidos de venta pendientes no se suman como demanda: la demanda independiente es el plan de ventas.
+- Fase 8:
+  - Las pantallas del Tablero son hojas de `DASHBOARD`: `DSH_INDICATORS`, `DSH_ALERTS` (`configure` = revisar ahora)
+    y `DSH_REPORTS` (`download`). El inicio y la campana siguen siendo de todos.
+  - Dentro de cada pantalla se exige además `view` en el módulo de origen, con su alcance; una sola regla SQL
+    (`alertVisibleTo`) decide quién ve una alerta y quién recibe su aviso.
+  - El detector vive en la API (no en un job de la BD): `alerts` (una fila por situación, con clave estable),
+    `alerts_runs` (bitácora) y `notifications` (campana). Solo una alerta NUEVA notifica y envía correo.
+  - El Excel se arma en el servidor, no con `xlsx` en el navegador: el permiso y el alcance no se pueden saltar.
+  - Parámetros nuevos en Parámetros → Tablero: detector activo, frecuencia, correo, días de cuarentena y retención.
+- Todas las fases del plan están completas.
 
 Existe un borrador anterior en `C:\Workspace\Proyecto\fabrihub`. Su lógica SQL de dominio
 (explosión, MRP y trigger de movimientos, en esquemas en español) **se reutiliza al portarla** a las

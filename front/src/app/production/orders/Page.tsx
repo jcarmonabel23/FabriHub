@@ -276,10 +276,10 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
           </div>
 
           <Group gap="xs">
-            {st === "created" && can("edit") && (
+            {(st === "created" || st === "planned") && can("edit") && (
               <Button size="xs" variant="light" leftSection={<IconPencil size={14} />} onClick={() => onEdit(o)}>Editar</Button>
             )}
-            {st === "created" && can("release") && (
+            {(st === "created" || st === "planned") && can("release") && (
               <Button size="xs" leftSection={<IconPlayerPlay size={14} />} loading={act.isPending} onClick={() => act.mutate({ action: "release" })}>Liberar y reservar</Button>
             )}
             {st === "released" && can("release") && (
@@ -299,12 +299,12 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
             {st === "confirmed" && can("close") && (
               <Button size="xs" color="dark" leftSection={<IconLock size={14} />} loading={act.isPending} onClick={() => act.mutate({ action: "close" })}>Cerrar y costear</Button>
             )}
-            {st === "created" && can("delete") && (
+            {(st === "created" || st === "planned") && can("delete") && (
               <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={14} />} onClick={() => modals.openConfirmModal({ title: "Eliminar orden", children: <Text size="sm">¿Eliminar la orden {o.number}?</Text>, labels: { confirm: "Eliminar", cancel: "Cancelar" }, confirmProps: { color: "red" }, onConfirm: () => remove.mutate() })}>
                 Eliminar
               </Button>
             )}
-            {(st === "created" || st === "released") && can("delete") && (
+            {(st === "planned" || st === "created" || st === "released") && can("delete") && (
               <Button size="xs" variant="subtle" color="red" leftSection={<IconBan size={14} />} onClick={() => askReason("Anular orden", "Motivo de la anulación", (reason) => act.mutate({ action: "cancel", body: { reason } }))}>Anular</Button>
             )}
           </Group>
@@ -352,7 +352,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
                 </Table.Thead>
                 <Table.Tbody>
                   {o.lines.map((l) => {
-                    const short = st === "created" && l.available < l.quantityRequired - l.quantityConsumed;
+                    const short = (st === "created" || st === "planned") && l.available < l.quantityRequired - l.quantityConsumed;
                     return (
                       <Table.Tr key={l.id}>
                         <Table.Td>
@@ -368,7 +368,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
                           )}
                         </Table.Td>
                         <Table.Td>
-                          {st === "created" && can("edit") ? (
+                          {(st === "created" || st === "planned") && can("edit") ? (
                             <Select size="xs" w={110} data={(warehouses.data ?? []).map((w) => ({ value: w.id, label: w.code }))} value={l.warehouseId} onChange={(v) => v && lineWh.mutate({ lineId: l.id, warehouseId: v })} allowDeselect={false} />
                           ) : (
                             l.warehouseCode
@@ -506,6 +506,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
 
 const FILTERS: { value: string; label: string }[] = [
   { value: "open", label: "Abiertas" },
+  { value: "planned", label: "Planificadas (MRP)" },
   { value: "created", label: "Creadas" },
   { value: "released", label: "Liberadas" },
   { value: "in_process", label: "En proceso" },

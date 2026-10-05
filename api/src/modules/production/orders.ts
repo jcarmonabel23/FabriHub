@@ -131,7 +131,7 @@ export const listOrders = handler({ query: listQuery }, async ({ query: q }) => 
     `${HEADER.replace("SELECT o.id,", "SELECT COUNT(*) OVER()::int AS total_rows, o.id,")}
       WHERE ($1::text IS NULL OR o.number ILIKE '%' || $1 || '%' OR p.code ILIKE '%' || $1 || '%' OR p.name ILIKE '%' || $1 || '%'
              OR o.lot_code ILIKE '%' || $1 || '%')
-        AND ($2::text IS NULL OR ($2::text = 'open' AND o.status IN ('created', 'released', 'in_process', 'confirmed')) OR o.status = $2::text)
+        AND ($2::text IS NULL OR ($2::text = 'open' AND o.status IN ('planned', 'created', 'released', 'in_process', 'confirmed')) OR o.status = $2::text)
       ORDER BY CASE WHEN o.status IN ('closed', 'cancelled') THEN 1 ELSE 0 END, o.priority, o.planned_start, o.number DESC
       LIMIT $3 OFFSET $4`,
     [q.search || null, q.status ?? null, q.pageSize, (q.page - 1) * q.pageSize]
@@ -306,22 +306,31 @@ async function recomputeStandard(client: pg.PoolClient, orderId: string) {
   );
 }
 
+export type CreateProductionOrder = z.input<typeof createBody>;
+
+/**
+ * Alta de una OP dentro de una transacción. La pantalla crea órdenes 'created'; el MRP las crea
+ * 'planned' (tesis: PLANNED → CREATED), que se editan, liberan o anulan igual.
+ */
+export async function insertProductionOrder(client: pg.PoolClient, input: CreateProductionOrder, scope: string[] | null, status: "created" | "planned" = "created") {
+  const b = createBody.parse(input);
+  const r = await resolveOrder(client, b.productId, b.formulaId, b);
+  assertInScope(scope, r.materialsWh, r.outputWh);
+  const o = await one<{ id: string; number: string }>(
+    `INSERT INTO production_orders (number, status, priority, product_id, formula_id, route_id, production_center_id, materials_warehouse_id,
+                                    output_warehouse_id, quantity_planned, planned_start, planned_end, lot_code, notes, created_by, updated_by)
+     VALUES (fn_next_document_number('MO'), $13, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, fn_current_app_user(), fn_current_app_user())
+     RETURNING id, number`,
+    [b.priority, r.productId, r.formulaId, r.routeId, r.centerId, r.materialsWh, r.outputWh, b.quantity, b.plannedStart, b.plannedEnd ?? null, b.lotCode ?? null, b.notes ?? null, status],
+    client
+  );
+  await buildLines(client, o!.id, r, b.quantity, scope);
+  return o!;
+}
+
 export const createOrder = handler({ body: createBody }, async ({ body: b, req, res }) => {
   const scope = await warehouseScope(req);
-  const id = await withTx(txCtx(req), async (client) => {
-    const r = await resolveOrder(client, b.productId, b.formulaId, b);
-    assertInScope(scope, r.materialsWh, r.outputWh);
-    const o = await one<{ id: string }>(
-      `INSERT INTO production_orders (number, status, priority, product_id, formula_id, route_id, production_center_id, materials_warehouse_id,
-                                      output_warehouse_id, quantity_planned, planned_start, planned_end, lot_code, notes, created_by, updated_by)
-       VALUES (fn_next_document_number('MO'), 'created', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, fn_current_app_user(), fn_current_app_user())
-       RETURNING id`,
-      [b.priority, r.productId, r.formulaId, r.routeId, r.centerId, r.materialsWh, r.outputWh, b.quantity, b.plannedStart, b.plannedEnd ?? null, b.lotCode ?? null, b.notes ?? null],
-      client
-    );
-    await buildLines(client, o!.id, r, b.quantity, scope);
-    return o!.id;
-  });
+  const id = await withTx(txCtx(req), async (client) => (await insertProductionOrder(client, b, scope)).id);
   res.status(201);
   return orderDetail(id);
 });
@@ -330,7 +339,7 @@ export const updateOrder = handler({ params: idParams, body: orderBody }, async 
   const scope = await warehouseScope(req);
   await withTx(txCtx(req), async (client) => {
     const o = await lockOrder(client, params.id);
-    assertStatus(o, ["created"], "editar");
+    assertStatus(o, ["created", "planned"], "editar");
     const r = await resolveOrder(client, o.product_id, o.formula_id, b);
     assertInScope(scope, r.materialsWh, r.outputWh);
     await client.query(
@@ -352,7 +361,7 @@ export const setLineWarehouse = handler(
     assertInScope(scope, body.warehouseId);
     await withTx(txCtx(req), async (client) => {
       const o = await lockOrder(client, params.id);
-      assertStatus(o, ["created"], "cambiar los materiales de");
+      assertStatus(o, ["created", "planned"], "cambiar los materiales de");
       const row = await one(
         `UPDATE production_orders_details SET warehouse_id = $3 WHERE id = $2 AND production_order_id = $1 RETURNING id`,
         [params.id, params.lineId, body.warehouseId],

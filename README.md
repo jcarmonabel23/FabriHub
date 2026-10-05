@@ -29,7 +29,7 @@ Para reiniciar la BD desde cero (vuelve a ejecutar `db/init`): `docker compose d
 cd front && npm install && npm run dev     # http://localhost:5173, usa la API del contenedor vía :8080
 cd api   && npm install && npm run typecheck && npm test   # motor fiscal
 cd front && npm test                       # reglas de acceso y política de contraseñas
-docker compose down -v && docker compose up -d && sh scripts/smoke.sh   # 253 pruebas end-to-end
+docker compose down -v && docker compose up -d && sh scripts/smoke.sh   # 330 pruebas end-to-end
 ```
 
 `scripts/smoke.sh` necesita la BD recién creada (usa la contraseña inicial del admin) y termina con la
@@ -51,10 +51,10 @@ db/init/        SQL numerado (convención davihub-core-db)
 db/migrations/  fase 3 en adelante (servicio migrate)
 api/            Node 22 + TS + Express: un handler por acción (como las lambdas de DaviHub)
   src/security/   authenticate · requirePermission · tokens · trace · rate limits
-  src/modules/    auth · admin · settings (motor genérico de catálogos) · taxes (motor fiscal) · inventory · lookups · metrics
+  src/modules/    auth · admin · settings (motor genérico de catálogos) · taxes (motor fiscal) · inventory · lookups · metrics · dashboard (indicadores, alertas, reportes)
 front/          React 19 + Vite + Mantine 8 + Tailwind 4 + Zustand (estructura davihub-front)
   server.ts       Express: estáticos + proxy /api + CSP
-scripts/smoke/  suites end-to-end por fase (security, settings-taxes, inventory, purchases, production, sales, ratelimit)
+scripts/smoke/  suites end-to-end por fase (security, settings-taxes, inventory, purchases, production, sales, planning, dashboard, ratelimit)
 ```
 
 ## Estado
@@ -121,4 +121,27 @@ scripts/smoke/  suites end-to-end por fase (security, settings-taxes, inventory,
   - **Notas de entrega:** FEFO automático o lotes elegidos a mano (validados con `enforce_fefo`), salida
     DESP_VENTA al costo promedio, margen bruto por nota, anulación por reverso.
   - **Trazabilidad lote → cliente** para retiros del mercado.
-- **Siguiente:** fase 7, Planificación (plan de ventas → MPS → MRP).
+- **Fase 7 (Planificación):** lista. Incluye:
+  - **Períodos** anuales con planes mensuales (Enero…Diciembre de la tesis normalizado a filas).
+  - **Plan de ventas** editable, copiable de otro período o propuesto desde lo despachado.
+  - **Plan maestro (MPS)** generado desde el plan de ventas: producción para no bajar del stock de
+    seguridad, en lotes de la fórmula, descontando OP abiertas; ajustable a mano.
+  - **MRP multinivel** con código de nivel más bajo: neteo contra existencia aprobada, OC y OP abiertas y
+    lotes en cuarentena; tamaño de lote (lote de fórmula o unidad de compra entera); lanzamiento adelantado
+    por el tiempo de reposición; la tabla MRP clásica por producto y mes queda guardada por corrida.
+  - **Órdenes sugeridas** convertibles en OP planificadas u OC en borrador (agrupadas por proveedor y
+    almacén). Convertir exige poder crear esos documentos en sus módulos.
+- **Fase 8 (Tablero y alertas):** lista. Incluye:
+  - **Detector de alertas** (job cada `DASHBOARD.alerts_interval_minutes`, 60 por defecto, o «Revisar ahora»):
+    stock bajo el mínimo o sobre el máximo, lotes por vencer o vencidos, cuarentena prolongada, OC, OP y OV
+    atrasadas. Una situación es UNA alerta abierta hasta que deja de cumplirse; si vuelve, es una nueva.
+  - **Campana** en el header y **correo de resumen** con las alertas nuevas, solo para quien puede verlas
+    (permiso `view` del módulo de origen y su alcance por almacén o por dueño del documento).
+  - **Indicadores:** valor, cobertura y rotación del inventario; cumplimiento y variación de costo de
+    producción; compras y ventas por mes con margen; cumplimiento de proveedores y de entregas; calidad y MRP.
+    Cada bloque aparece solo si el usuario ve su módulo.
+  - **Reportes en Excel** generados en el servidor (exceljs), con vista previa: existencias valoradas,
+    vencimientos, movimientos, compras, ventas y margen, OP y costos, sugerencias del MRP y alertas.
+  - Variable nueva: `APP_PUBLIC_URL` (enlaces de los correos).
+- **Ojo con las pruebas:** `scripts/smoke.sh` ya usa 59 de los 60 intentos de `/auth` por IP (`AUTH_RATE_LIMIT`).
+  Una suite nueva no debe crear más usuarios con login; conviene reasignarles módulos a los existentes.

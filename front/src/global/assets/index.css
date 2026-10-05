@@ -8,6 +8,7 @@
 @import "@mantine/core/styles.css";
 @import "@mantine/dates/styles.css";
 @import "@mantine/notifications/styles.css";
+@import "@mantine/charts/styles.css";
 @import "tailwindcss";
 
 /* Paleta petrol disponible en Tailwind como bg-brand-50, text-brand-600, etc. */

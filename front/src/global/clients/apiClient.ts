@@ -169,3 +169,42 @@ export const apiPost = <T>(path: string, body?: unknown) => api<T>(path, { metho
 export const apiPut = <T>(path: string, body: unknown) => api<T>(path, { method: "PUT", body });
 export const apiPatch = <T>(path: string, body: unknown) => api<T>(path, { method: "PATCH", body });
 export const apiDelete = <T>(path: string) => api<T>(path, { method: "DELETE" });
+
+/**
+ * @function apiDownload
+ * @description Descarga un archivo (reportes Excel) con la misma sesión y renovación de token que api()
+ */
+export async function apiDownload(path: string, query?: Query): Promise<void> {
+  const traceId = newTraceId();
+  const get = (token: string | null) =>
+    fetch(buildUrl(path, query), {
+      headers: { "x-trace-id": traceId, ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      credentials: "same-origin"
+    }).catch(() => {
+      throw new ApiError(0, "NETWORK", "No hay conexión con el servidor", undefined, traceId);
+    });
+
+  let res = await get(await validToken());
+  if (res.status === 401) res = await get((await refreshSession()).accessToken);
+  if (!res.ok) {
+    let json: unknown = null;
+    try {
+      json = JSON.parse(await res.text());
+    } catch {
+      json = null;
+    }
+    const error = toError(res.status, json, traceId);
+    if (res.status === 401) forceSignOut(error.code);
+    throw error;
+  }
+
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "reporte.xlsx";
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

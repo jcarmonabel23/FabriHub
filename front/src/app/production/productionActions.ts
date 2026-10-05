@@ -4,10 +4,11 @@
  * @description Navegación entre pantallas de Producción (filtrada por acceso)
  */
 
-import { IconClipboardList, IconFlask, IconListNumbers, IconRoute, IconTimeline, IconTool } from "@tabler/icons-react";
+import { IconCalendarStats, IconClipboardList, IconFlask, IconListNumbers, IconRoute, IconTimeline, IconTool } from "@tabler/icons-react";
 import type { HeaderAction } from "@atoms/layouts/ModuleHeader";
 
 export const PRODUCTION_ACTIONS: HeaderAction[] = [
+  { id: "planning", label: "Planificación", path: "/production/planning", icon: IconCalendarStats, requiredCode: "PRD_PLANNING" },
   { id: "orders", label: "Órdenes", path: "/production/orders", icon: IconClipboardList, requiredCode: "PRD_ORDERS" },
   { id: "tracking", label: "Seguimiento", path: "/production/tracking", icon: IconTimeline, requiredCode: "PRD_TRACKING" },
   { id: "formulas", label: "Fórmulas", path: "/production/formulas", icon: IconFlask, requiredCode: "PRD_FORMULAS" },
