@@ -256,7 +256,134 @@ actividades de manufactura", 4.2.1). Si el tiempo aprieta, la fase 7 puede hacer
     `alerts_runs` (bitácora) y `notifications` (campana). Solo una alerta NUEVA notifica y envía correo.
   - El Excel se arma en el servidor, no con `xlsx` en el navegador: el permiso y el alcance no se pueden saltar.
   - Parámetros nuevos en Parámetros → Tablero: detector activo, frecuencia, correo, días de cuarentena y retención.
-- Todas las fases del plan están completas.
+- Todas las fases del plan original están completas.
+
+### 10.1 Ampliación: multiempresa, logos, imagen de producto y punto de venta
+
+| Fase | Entregable | Estado |
+|---|---|---|
+| **9. Multiempresa: BD** | `companies`, `users_companies`, `company_id` + RLS en las tablas de negocio, FK compuestas, únicos por empresa; la API fija la empresa activa | Terminada |
+| **10. Multiempresa: API y front** | Cambio de empresa, administración de empresas (plataforma / empresa), selector en el front, plantilla de empresa nueva | Terminada |
+| **11. Archivos + imagen de producto** | Servicio de archivos, `products.image_file_id` y `barcode` | Terminada |
+| **12. Identidad por empresa** | Logo en el sitio, Excel, PDF y correos | Terminada |
+| **13. Punto de venta: backend** | Cajas, turnos con arqueo, venta en una transacción (precio/IVA, FEFO, pagos combinados, IGTF), supervisor, anulación, comprobante PDF | Terminada |
+| **14. Punto de venta: pantalla** | Pantalla de venta con fotos, lector de código de barras y ticket en vivo; turnos y comprobantes | Terminada |
+
+- Fase 9 (migración `20261028_0901_multicompany`):
+  - Una BD compartida. Cada tabla de negocio lleva `company_id NOT NULL DEFAULT fn_current_company()` y una
+    política RLS `p_company_isolation`. La API fija `app.company_id`: `withTx` en la transacción y `query()`
+    sobre el pool en la conexión (AsyncLocalStorage, `runInCompany`). Sin empresa, RLS no devuelve nada.
+  - Son **globales** (sin `company_id`): seguridad (usuarios, sesiones, roles, módulos, permisos), bitácoras,
+    monedas, unidades, tipos de producto, tipos y conceptos de movimiento, impuestos, retenciones y
+    tratamientos fiscales. El código depende de sus códigos; en la fase 10 solo los edita el administrador de plataforma.
+  - Las FK entre tablas de empresa son compuestas `(company_id, x) → (company_id, id)`: las FK ignoran RLS,
+    así que esto es lo que impide referenciar datos de otra empresa. `ON DELETE SET NULL (x)` anula solo la columna.
+  - Los únicos naturales (código, RIF, número) pasan a `(company_id, …)`. Los que ya incluyen una FK de empresa
+    (p. ej. `(warehouse_id, product_id)`) quedan igual. Los `ON CONFLICT` sobre ellos deben nombrar `company_id`.
+  - Las funciones `SECURITY DEFINER` y las que pueden correr dentro de ellas filtran la empresa a mano:
+    `fn_parameter` y `fn_next_document_number`. `fn_post/reverse_inventory_movement` son ahora envoltorios
+    que validan la empresa y llaman al núcleo `fn__post/reverse_inventory_movement` (vedado a la app).
+  - Las vistas usan `security_invoker`: si no, correrían como su dueño, sin RLS.
+  - Los permisos son por empresa (`users_modules.company_id`). La sesión guarda su empresa activa
+    (`users_sessions.company_id`), que es la de por defecto del usuario. El admin inicial pertenece a todas las empresas.
+  - Administración de usuarios y auditoría: solo los miembros y registros de la empresa activa.
+  - El detector de alertas recorre las empresas activas, cada una con su frecuencia.
+  - `scripts/smoke/tenant-isolation.sql` (lo corre `smoke.sh`) prueba el aislamiento en la BD con el rol de la app.
+- Fase 10 (migración `20261029_1001_multicompany_admin`):
+  - Dos niveles de administración. `users.is_platform_admin` (el admin inicial) crea, edita y suspende empresas y
+    gestiona sus miembros (módulo `ADM_COMPANIES`, Seguridad → Empresas). Cada empresa tiene sus propios
+    administradores, que gestionan usuarios y permisos solo dentro de ella.
+  - `catalogs_modules.scope`: `platform` (Empresas, Roles, Módulos) no se muestra ni se asigna fuera de la plataforma;
+    `global` (impuestos, retenciones, tratamientos) deja a los demás solo `access/view/view_all/download`.
+    Los catálogos globales del motor (monedas, unidades, tipos de producto, conceptos) responden 403 `PLATFORM_ONLY`
+    al escribir; el front los muestra en solo lectura (`useCanGlobal`).
+  - Empresa nueva: `fn_company_init` copia de la empresa plantilla (por defecto la activa) los parámetros, la numeración
+    (desde 1) y los catálogos comerciales y de producción. Quien la crea queda como miembro administrador; opcionalmente
+    se indica otro administrador (si no existe se crea y recibe una contraseña temporal).
+  - Alta de usuario con un correo que ya existe en otra empresa: se agrega como miembro (`addedExisting`), con su
+    contraseña actual. "Quitar de la empresa" retira pertenencia, módulos y almacenes solo en la empresa activa.
+  - Cambio de empresa: `GET /auth/companies`, `POST /auth/switch-company` (opción "abrir siempre en esta"). La empresa
+    vive en la sesión; el front envía `x-company-id` y, si otra pestaña cambió de empresa, la API responde
+    409 `COMPANY_CHANGED` y la página se recarga. Si la empresa de la sesión se suspende o el usuario es retirado,
+    la sesión pasa sola a otra de sus empresas (o 403 `NO_COMPANY`).
+  - Selector de empresa en la cabecera; tras cambiar se recarga la app para descartar cachés.
+  - `scripts/smoke/companies.mjs` cubre empresas, cambio, alcance de módulos, miembros y suspensión.
+- Fase 11 (migración `20261030_1101_files_product_image`):
+  - `files` (por empresa, RLS) guarda los metadatos; el contenido va al almacenamiento (`api/src/lib/storage.ts`):
+    hoy el volumen `uploads` (`/data/uploads`). Un bucket S3/R2 sería otro driver con la misma interfaz.
+    Claves `<empresa>/<archivo>/<variante>.webp`, generadas por la API.
+  - Subida (`modules/files/images.ts`): cuerpo crudo hasta `UPLOAD_MAX_MB` (5); solo PNG/JPG/WebP reconocidos
+    por su firma de bytes (no por extensión ni Content-Type; SVG no). sharp decodifica con límite de píxeles y
+    re-codifica a WebP sin metadatos: `orig` (≤ 1600 px), `400` y `96` (cuadradas, fondo transparente).
+  - Entrega: `GET /api/v1/files/<empresa>/<archivo>/<variante>.webp?exp&sig` sin sesión (un `<img>` no envía el token).
+    La API firma la URL (HMAC) al devolver el registro dueño, que ya pasó autenticación, permiso y RLS. La firma vence
+    en 6 a 12 h y es estable en esa ventana (caché privada del navegador). Un enlace filtrado sirve hasta que vence.
+  - La imagen es un subrecurso del dueño y hereda su permiso: `PUT/DELETE /inventory/products/:id/image`
+    (INV_PRODUCTS edit). Reemplazar o borrar elimina el archivo anterior tras el commit; borrar el producto también.
+  - `products.barcode`: único por empresa; el listado y `/lookups/products` buscan también por código de barras
+    (coincidencia exacta). El buscador de productos y el listado muestran la miniatura.
+  - Respaldo: el servicio `backup-files` empaqueta el volumen `uploads` a diario en `./backups/uploads` (14 días).
+  - `scripts/smoke/files.mjs` cubre validación, firmas, reemplazo, borrado y aislamiento por empresa.
+- Fase 12 (migración `20261031_1201_company_branding`):
+  - `companies.logo_file_id`, `icon_file_id` y `brand_color` (#rrggbb). La FK compuesta `(id, logo_file_id) → files (company_id, id)`
+    obliga a que el archivo sea de la propia empresa. Se editan en Parámetros → Empresa (SET_COMPANY edit):
+    `PUT/DELETE /settings/company/logo|icon`; el color va con el formulario (`null` lo quita, ausente lo conserva).
+  - `modules/files/images.ts` tiene perfiles de variantes: producto (`orig/400/96.webp`), logo (`orig.webp`, `h96.webp` para la
+    cabecera, `doc.png` para Excel/PDF/correo, que no admiten WebP) e ícono (`orig.webp`, `192.png`, `32.png` favicon).
+  - `companyBranding(companyId)` (`modules/settings/branding.ts`) reúne razón social, RIF, contacto, color y el logo PNG.
+  - Sitio: la sesión trae `company.logo/icon/brandColor` (URLs firmadas, se renuevan con cada refresh). El logo reemplaza al de
+    FabriHub en la cabecera, el color marca su borde y el ícono es el favicon. El login sigue con la marca FabriHub.
+  - Excel: logo, «razón social · RIF», nombre del reporte y fecha de emisión; el encabezado de columnas usa el color de la empresa.
+  - PDF (`lib/pdf.ts`, pdfkit con fuentes estándar): orden de venta, nota de entrega y orden de compra
+    (`GET …/:id/pdf`, con las mismas reglas de visibilidad que su pantalla). Sello «BORRADOR»/«ANULADA», tabla que repite
+    encabezado, IVA por alícuota, retenciones, firmas y paginación. La fase 13 lo reutilizará para el ticket.
+  - Correos (OTP, contraseña temporal, alertas): logo incrustado por CID (sin enlaces externos), nombre en el asunto y color.
+    El OTP usa la empresa por defecto del usuario; la contraseña temporal, la empresa donde se dio el acceso.
+  - No se implementó el logo para modo oscuro: la app no tiene modo oscuro (`files.purpose` ya admite `company_logo_dark`).
+  - `scripts/smoke/branding.mjs` cubre subida, sesión, color, Excel, PDF, correo, aislamiento por empresa y retiro.
+- Fase 13 (migración `20261101_1301_pos`):
+  - Módulo raíz `POS` con tres hojas: `POS_TERMINALS` (cajas), `POS_SESSIONS` (turnos: add_new abre, close cierra) y
+    `POS_SALES` (add_new vende; view/view_all comprobantes; **approve = supervisor**). Rutas en `/api/v1/pos`.
+  - `pos_terminals`: almacén, lista de precios de venta, cliente por defecto y correlativo propio (`ticket_prefix` único
+    por empresa + `next_ticket`). Con turnos no se elimina (se desactiva); tras emitir comprobantes su prefijo no cambia.
+  - `pos_sessions` (correlativo `TUR`): un turno abierto por caja y por cajero (índices únicos parciales). Fondo de apertura
+    en efectivo por moneda. `pos_sessions_counts`: esperado = fondo + cobrado − vuelto, por medio y moneda (ventas no anuladas).
+    Al cerrar, el efectivo debe contarse; lo electrónico no declarado se da por conciliado. Si la diferencia en moneda base
+    supera `POS.max_cash_difference`, el cierre exige observación.
+  - Venta (`POST /pos/sales`, una transacción): `buildOrder` (motor de las órdenes de venta, ahora con `opts.priceListId` de la
+    caja y sin retenciones) recalcula precio e IVA; salida `VENTA_POS` por FEFO sobre lo libre (no reservado) de lotes aprobados
+    y vigentes del almacén de la caja, con costo por línea; pagos `cash/card/mobile/transfer` con su moneda, la tasa del día y
+    su equivalente en moneda base. Solo el efectivo da vuelto (en la moneda que se indique); punto, pago móvil y transferencia
+    exigen referencia. `POST /pos/sales/quote` cotiza sin guardar (totales, IVA por alícuota, IGTF, pendiente, vuelto).
+  - IGTF (`POS.igtf_enabled`, `igtf_rate` 3 %): sobre la parte del total pagada en divisas (`min(pagado en divisas, total)`).
+    Es una aproximación operativa: **debe confirmarla un contador**.
+  - Supervisor: usuario con `approve` en POS_SALES. Si el cajero no lo es, un descuento (línea combinado con el global) mayor a
+    `POS.max_discount_pct` (5 %) y toda anulación piden `supervisor: { userId, pin }`. La clave (4–8 dígitos, bcrypt en
+    `users.pos_pin_hash`) la fija el propio supervisor con su contraseña (`PUT /pos/supervisor-pin`); 5 fallos la bloquean
+    15 min (423). Se verifica fuera de la transacción para que el conteo de fallos persista. La auditoría no registra la clave.
+  - Anular (`POST /pos/sales/:id/void`) solo mientras el turno sigue abierto: reversa el movimiento de inventario. Con el turno
+    cerrado corresponde una devolución (nota de crédito, fase posterior). Las ventas no se borran (`REVOKE DELETE`).
+  - Clientes: búsqueda por RIF/cédula/nombre y alta rápida (`POST /pos/customers`); `customers.rif` admite ahora cédula sin
+    dígito verificador (`V-12345678`). Sin cliente: el de la caja o «Consumidor final» (`CONSUMIDOR_FINAL`, se crea al primer uso).
+  - Catálogo (`GET /pos/catalog?terminalId&search`): vendibles con imagen, precio (lista de la caja o referencia), IVA, disponible
+    y código de barras; código de barras exacto primero, luego parecido del nombre (índices `pg_trgm` en nombre y código).
+  - Comprobante PDF (`GET /pos/sales/:id/pdf`, `renderPdf`): pagos, vuelto, IGTF, sello «ANULADA» y la leyenda
+    «Este comprobante no es una factura fiscal». La homologación SENIAT (máquina/imprenta fiscal) queda para la fase 15.
+  - Front: Punto de venta → Cajas (`/pos/terminals`) y «Mi clave de supervisor».
+  - `scripts/smoke/pos.mjs` cubre cajas, turnos, catálogo, clientes, cotización, pagos combinados, IGTF, supervisor, anulación,
+    arqueo, bloqueo de la clave y aislamiento por empresa.
+- **Fase 14 (pantalla del punto de venta), notas:**
+  - Caja (`/pos/sales`, POS_SALES add_new): sin turno muestra «Abrir turno» (caja libre + fondo por moneda). Con turno: catálogo
+    con fotos y buscador (Enter agrega por código de barras/código exacto o resultado único; «3*código» agrega 3) y ticket en vivo
+    a la derecha. Cada cambio se cotiza en el servidor (`/pos/sales/quote`, 200 ms de espera). Atajos: F2 buscar, F9 cobrar.
+  - La cuenta en curso se guarda en el navegador (zustand persist `fabrihub-pos-cart`) y se descarta si cambia el turno.
+  - Cobro: efectivo / punto de venta / pago móvil / transferencia en cualquier moneda con tasa del día, botón «Exacto» (considera
+    el IGTF), vuelto en la moneda elegida y clave de supervisor cuando el descuento supera el máximo. Al confirmar: número de
+    comprobante, vuelto a entregar y PDF.
+  - `GET /pos/me` devuelve además las monedas con tasa de hoy y los parámetros (`maxDiscountPct`, `igtfEnabled`, `igtfRate`).
+  - Comprobantes (`/pos/sales/tickets`, filtro `?session=`): detalle, PDF y anulación con supervisor. Turnos (`/pos/sessions`):
+    arqueo por medio y moneda, «Ver sus ventas» y cierre (efectivo a contar; medios electrónicos precargados con lo esperado).
+  - `ModuleHeader` resalta la acción más específica que coincide con la ruta.
 
 Existe un borrador anterior en `C:\Workspace\Proyecto\fabrihub`. Su lógica SQL de dominio
 (explosión, MRP y trigger de movimientos, en esquemas en español) **se reutiliza al portarla** a las

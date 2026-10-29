@@ -13,6 +13,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import type { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import { useSearchParams } from "react-router-dom";
+import PdfButton from "@atoms/actions/PdfButton";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import { useCan } from "@modules/access-control/useCan";
@@ -75,6 +76,7 @@ function DeliveryDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: 
               {n.cancelledAt ? ` · anulada por ${n.cancelledBy} ${fmtDateTime(n.cancelledAt)}` : ""}
             </Text>
           </div>
+          <PdfButton path={`/sales/deliveries/${n.id}/pdf`} w="fit-content" />
           {n.status === "posted" && can("delete") && (
             <Button size="xs" variant="subtle" color="red" w="fit-content" leftSection={<IconBan size={14} />} loading={cancel.isPending} onClick={askCancel}>
               Anular nota (reversa la salida)

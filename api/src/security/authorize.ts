@@ -13,6 +13,11 @@
  *  2. Si está fuera de servicio (is_offline) → 503 MODULE_OFFLINE.
  *  3. El usuario debe tener `access` en el módulo y TODOS los slugs pedidos.
  *     Permisos efectivos = unión de roles activos + extras (vista v_users_effective_permissions).
+ *     Los permisos son por empresa: solo cuentan los de la empresa activa (fn_current_company).
+ *  4. Alcance del módulo (catalogs_modules.scope):
+ *     - platform: solo existe para administradores de plataforma, que tienen todos los permisos.
+ *     - global:   datos compartidos por todas las empresas; quien no administra la plataforma
+ *                 solo conserva los permisos de lectura (READ_ONLY_SLUGS).
  */
 
 import type { Request, Response, NextFunction, RequestHandler } from "express";
@@ -21,6 +26,24 @@ import { one, query } from "../db.js";
 import { HttpError, forbidden } from "../lib/http.js";
 
 export const ENV_COLUMN = { dev: "is_show_dev", qa: "is_show_qa", prod: "is_show_prod" }[config.APP_ENVIRONMENT];
+
+/** Lo que conserva en un módulo global quien no administra la plataforma */
+export const READ_ONLY_SLUGS = ["access", "view", "view_all", "download"];
+
+/** Visibilidad por alcance (requiere los alias m = módulo y u = usuario) */
+const SCOPE_VISIBLE = `(m.scope <> 'platform' OR u.is_platform_admin)`;
+
+/** Permisos efectivos según el alcance (requiere m, u y ep = v_users_effective_permissions) */
+const SCOPED_PERMISSIONS = `CASE
+    WHEN m.scope = 'platform' THEN
+         CASE WHEN u.is_platform_admin
+              THEN (SELECT jsonb_agg(slug ORDER BY order_list) FROM catalogs_permissions WHERE is_active)
+              ELSE '[]'::jsonb END
+    WHEN m.scope = 'global' AND NOT u.is_platform_admin THEN
+         COALESCE((SELECT jsonb_agg(p) FROM jsonb_array_elements_text(ep.permissions) p
+                    WHERE p = ANY ('{${READ_ONLY_SLUGS.join(",")}}'::text[])), '[]'::jsonb)
+    ELSE COALESCE(ep.permissions, '[]'::jsonb)
+  END`;
 
 interface ModuleAccessRow {
   is_public: boolean;
@@ -31,9 +54,11 @@ interface ModuleAccessRow {
 
 export async function modulePermissions(userId: string, moduleCode: string): Promise<ModuleAccessRow | null> {
   return one<ModuleAccessRow>(
-    `SELECT m.is_public, m.is_offline, m.${ENV_COLUMN} AS visible, ep.permissions
+    `SELECT m.is_public, m.is_offline, m.${ENV_COLUMN} AND ${SCOPE_VISIBLE} AS visible, ${SCOPED_PERMISSIONS} AS permissions
        FROM catalogs_modules m
-       LEFT JOIN v_users_effective_permissions ep ON ep.module_id = m.id AND ep.user_id = $1
+       JOIN users u ON u.id = $1
+       LEFT JOIN v_users_effective_permissions ep
+              ON ep.module_id = m.id AND ep.user_id = $1 AND ep.company_id = fn_current_company()
       WHERE m.code = $2 AND m.is_active`,
     [userId, moduleCode]
   );
@@ -84,11 +109,13 @@ export function sessionModules(userId: string): Promise<SessionModule[]> {
   return query<SessionModule>(
     `SELECT m.code, m.name, m.description, m.icon, m.path,
             p.code AS "parentCode", m.is_public AS "isPublic", m.is_offline AS "isOffline",
-            m.order_list AS "orderList", COALESCE(ep.permissions, '[]'::jsonb) AS permissions
+            m.order_list AS "orderList", ${SCOPED_PERMISSIONS} AS permissions
        FROM catalogs_modules m
+       JOIN users u ON u.id = $1
        LEFT JOIN catalogs_modules p ON p.id = m.module_parent_id
-       LEFT JOIN v_users_effective_permissions ep ON ep.module_id = m.id AND ep.user_id = $1
-      WHERE m.is_active AND m.${ENV_COLUMN}
+       LEFT JOIN v_users_effective_permissions ep
+              ON ep.module_id = m.id AND ep.user_id = $1 AND ep.company_id = fn_current_company()
+      WHERE m.is_active AND m.${ENV_COLUMN} AND ${SCOPE_VISIBLE}
         AND (p.id IS NULL OR (p.is_active AND p.${ENV_COLUMN}))
       ORDER BY p.order_list NULLS FIRST, m.order_list`,
     [userId]

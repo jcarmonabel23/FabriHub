@@ -62,7 +62,15 @@ export interface Permission {
 
 export interface Lookups {
   roles: Pick<Role, "id" | "slug" | "name" | "description" | "permissions">[];
-  modules: { code: string; name: string; isOffline: boolean; parentCode: string; parentName: string }[];
+  modules: {
+    code: string;
+    name: string;
+    isOffline: boolean;
+    parentCode: string;
+    parentName: string;
+    /** global: catálogo compartido entre empresas (fuera de la plataforma solo se lee) */
+    scope: "company" | "global";
+  }[];
   permissions: Permission[];
 }
 
@@ -122,4 +130,44 @@ export interface AuthAuditRow {
   ipAddress: string | null;
   userAgent: string | null;
   createdAt: string;
+}
+
+/** Empresa de la plataforma (Seguridad → Empresas, solo administradores de plataforma) */
+export interface CompanyRow {
+  id: string;
+  code: string;
+  legalName: string;
+  tradeName: string | null;
+  rif: string;
+  isActive: boolean;
+  city: string | null;
+  country: string;
+  email: string | null;
+  baseCurrencyId: string;
+  baseCurrencyCode: string;
+  createdAt: string;
+  membersCount: number;
+}
+
+export interface CompanyInput {
+  code?: string;
+  legalName: string;
+  tradeName?: string | null;
+  rif: string;
+  city?: string | null;
+  country?: string;
+  email?: string | null;
+  baseCurrencyId: string;
+  templateCompanyId?: string;
+  admin?: { email: string; names?: string };
+}
+
+export interface CompanyMember {
+  id: string;
+  email: string;
+  names: string;
+  isActive: boolean;
+  isPlatformAdmin: boolean;
+  isDefault: boolean;
+  memberSince: string;
 }

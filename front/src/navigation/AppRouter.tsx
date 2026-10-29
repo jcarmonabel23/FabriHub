@@ -21,6 +21,7 @@ import UsersAdminPage from "@admin/users/Page";
 import RolesAdminPage from "@admin/roles/Page";
 import ModulesAdminPage from "@admin/modules/Page";
 import AuditAdminPage from "@admin/audit/Page";
+import CompaniesAdminPage from "@admin/companies/Page";
 import ModuleHubPage from "@/app/hub/ModuleHubPage";
 import CompanyPage from "@/app/settings/company/Page";
 import ParametersPage from "@/app/settings/parameters/Page";
@@ -52,6 +53,10 @@ import DeliveryNotesPage from "@/app/sales/delivery-notes/Page";
 import CustomersPage from "@/app/sales/customers/Page";
 import SalesPriceListsPage from "@/app/sales/price-lists/Page";
 import SellersPage from "@/app/sales/sellers/Page";
+import PosTerminalsPage from "@/app/pos/terminals/Page";
+import PosSalesPage from "@/app/pos/sales/Page";
+import PosTicketsPage from "@/app/pos/tickets/Page";
+import PosSessionsPage from "@/app/pos/sessions/Page";
 import { AuthRoute, ProtectedRoute } from "./ProtectedRoute";
 import { ProtectedModuleRoute } from "./ProtectedModuleRoute";
 import ModulePathResolver from "./ModulePathResolver";
@@ -100,6 +105,9 @@ export default function AppRouter() {
           </Route>
           <Route element={<ProtectedModuleRoute moduleCode="ADM_MODULES" />}>
             <Route path="/admin/modules" element={<ModulesAdminPage />} />
+          </Route>
+          <Route element={<ProtectedModuleRoute moduleCode="ADM_COMPANIES" />}>
+            <Route path="/admin/companies" element={<CompaniesAdminPage />} />
           </Route>
           <Route element={<ProtectedModuleRoute moduleCode="ADM_AUDIT" />}>
             <Route path="/admin/audit" element={<AuditAdminPage />} />
@@ -205,6 +213,18 @@ export default function AppRouter() {
           </Route>
           <Route element={<ProtectedModuleRoute moduleCode="SAL_SELLERS" />}>
             <Route path="/sales/sellers" element={<SellersPage />} />
+          </Route>
+
+          {/* Punto de venta (fases 13 y 14) */}
+          <Route element={<ProtectedModuleRoute moduleCode="POS_SALES" />}>
+            <Route path="/pos/sales" element={<PosSalesPage />} />
+            <Route path="/pos/sales/tickets" element={<PosTicketsPage />} />
+          </Route>
+          <Route element={<ProtectedModuleRoute moduleCode="POS_SESSIONS" />}>
+            <Route path="/pos/sessions" element={<PosSessionsPage />} />
+          </Route>
+          <Route element={<ProtectedModuleRoute moduleCode="POS_TERMINALS" />}>
+            <Route path="/pos/terminals" element={<PosTerminalsPage />} />
           </Route>
 
           {/* Hubs de subsistemas y pantallas de fases futuras: hub, mantenimiento o 404 */}

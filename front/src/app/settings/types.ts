@@ -4,6 +4,8 @@
  * @description Modelos de Parámetros del Sistema
  */
 
+import type { CompanyBranding } from "@auth/types";
+
 export type AppliesTo = "purchases" | "sales" | "both";
 
 export interface CatalogItem {
@@ -43,6 +45,10 @@ export interface Company {
   isWithholdingAgent: boolean;
   fiscalYearStartMonth: number;
   updatedAt: string;
+  /** Identidad (fase 12): el color se guarda con el formulario; logo e ícono se suben aparte */
+  brandColor: string | null;
+  logo: CompanyBranding["logo"];
+  icon: CompanyBranding["icon"];
 }
 
 export interface Parameter {

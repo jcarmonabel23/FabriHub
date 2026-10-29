@@ -120,7 +120,7 @@ export async function buildOrder(db: Db | pg.PoolClient, input: OrderInput): Pro
   if (!supplier) throw badRequest("INVALID_SUPPLIER", "Proveedor inexistente");
   if (!supplier.is_active) throw badRequest("INACTIVE_SUPPLIER", "El proveedor está inactivo");
 
-  const base = await one<{ id: string }>(`SELECT base_currency_id AS id FROM company WHERE id = 1`, [], db);
+  const base = await one<{ id: string }>(`SELECT base_currency_id AS id FROM companies WHERE id = fn_current_company()`, [], db);
   const currencyId = input.currencyId ?? supplier.currency_id ?? base!.id;
   const rate = await exchangeRate(db, currencyId, input.orderDate);
 

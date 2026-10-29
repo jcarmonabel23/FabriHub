@@ -24,12 +24,14 @@ import { notificationsRoutes } from "./modules/dashboard/notifications.js";
 import { dashboardRoutes } from "./modules/dashboard/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
 import { inventoryRoutes } from "./modules/inventory/routes.js";
+import { serveFile } from "./modules/files/images.js";
 import { lookupsRoutes } from "./modules/lookups/routes.js";
 import { metricsRoutes } from "./modules/metrics/routes.js";
 import { purchasesRoutes, qualityRoutes } from "./modules/purchases/routes.js";
 import { productionRoutes } from "./modules/production/routes.js";
 import { salesRoutes } from "./modules/sales/routes.js";
 import { planningRoutes } from "./modules/planning/routes.js";
+import { posRoutes } from "./modules/pos/routes.js";
 import { settingsRoutes } from "./modules/settings/routes.js";
 import { taxesRoutes } from "./modules/taxes/routes.js";
 import { authenticate } from "./security/authenticate.js";
@@ -70,6 +72,8 @@ app.get("/health", async (_req, res) => {
 
 const v1 = express.Router();
 v1.use("/auth", authRoutes);
+// Imágenes: sin sesión (un <img> no envía el token); las autoriza la firma de la URL
+v1.get("/files/:company/:file/:name", serveFile);
 v1.use(authenticate(), apiLimiter);
 v1.use("/admin", adminRoutes);
 v1.use("/metrics", metricsRoutes);
@@ -82,6 +86,7 @@ v1.use("/quality", qualityRoutes);
 v1.use("/production", productionRoutes);
 v1.use("/sales", salesRoutes);
 v1.use("/planning", planningRoutes);
+v1.use("/pos", posRoutes);
 v1.use("/dashboard", dashboardRoutes);
 v1.use("/notifications", notificationsRoutes);
 app.use("/api/v1", v1);
@@ -116,6 +121,11 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
     const message = pgCode === "P0001" ? (err as Error).message : generic;
     res.locals.errorCode = code;
     res.status(status).json({ error: { code, message, details: (err as { constraint?: string }).constraint } });
+    return;
+  }
+  if ((err as { type?: string })?.type === "entity.too.large") {
+    res.locals.errorCode = "FILE_TOO_LARGE";
+    res.status(413).json({ error: { code: "FILE_TOO_LARGE", message: `El archivo supera el máximo de ${config.UPLOAD_MAX_MB} MB` } });
     return;
   }
   if (err instanceof SyntaxError && "body" in err) {

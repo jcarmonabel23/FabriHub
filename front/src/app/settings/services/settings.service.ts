@@ -4,7 +4,8 @@
  * @description Llamadas a /settings/* y /lookups/*
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@clients/apiClient";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, apiUpload } from "@clients/apiClient";
+import type { CompanyBranding } from "@auth/types";
 import type { CatalogItem, Company, LookupItem, Parameter, Rate, Sequence } from "../types";
 
 export const settingsApi = {
@@ -23,7 +24,10 @@ export const settingsApi = {
 
   // Empresa
   getCompany: () => apiGet<Company>("/settings/company"),
-  updateCompany: (body: Omit<Company, "baseCurrencyCode" | "updatedAt">) => apiPut<Company>("/settings/company", body),
+  updateCompany: (body: Omit<Company, "baseCurrencyCode" | "updatedAt" | "logo" | "icon">) => apiPut<Company>("/settings/company", body),
+  /** Logo e ícono de la empresa activa: se guardan al elegirlos */
+  setCompanyImage: (kind: "logo" | "icon", file: File) => apiUpload<CompanyBranding>(`/settings/company/${kind}`, file),
+  removeCompanyImage: (kind: "logo" | "icon") => apiDelete<CompanyBranding>(`/settings/company/${kind}`),
 
   // Parámetros
   listParameters: () => apiGet<Parameter[]>("/settings/parameters"),

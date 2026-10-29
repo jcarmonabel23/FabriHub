@@ -12,6 +12,7 @@ import { hmac, otpCode } from "../../lib/crypto.js";
 import { HttpError, handler } from "../../lib/http.js";
 import { sendOtp } from "../../lib/mailer.js";
 import { txCtx } from "../../security/context.js";
+import { brandingForUser } from "../settings/branding.js";
 
 const body = z.object({ challengeId: z.uuid() });
 
@@ -40,9 +41,9 @@ export const otpResend = handler({ body }, async ({ body, req }) => {
       [otp.id, hmac(code), expiresAt]
     );
     await logAuth(req, "otp_resend", true, { userId: otp.user_id, email: otp.email }, client);
-    return { email: otp.email, code, expiresAt };
+    return { email: otp.email, userId: otp.user_id, code, expiresAt };
   });
 
-  await sendOtp(sent.email, sent.code, "login");
+  await sendOtp(sent.email, sent.code, "login", await brandingForUser(sent.userId));
   return { otpExpiresAt: sent.expiresAt.toISOString(), resendAfterSeconds: config.OTP_RESEND_SECONDS };
 });

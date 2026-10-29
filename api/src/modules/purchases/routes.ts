@@ -6,6 +6,7 @@
 
 import { Router } from "express";
 import { requirePermission as can } from "../../security/authorize.js";
+import { purchaseOrderPdf } from "../documents/pdfs.js";
 import { priceListRoutes } from "../pricing/priceLists.js";
 import { approveLot, getQualityLot, listQualityLots, rejectLot } from "../quality/lots.js";
 import {
@@ -62,6 +63,7 @@ purchasesRoutes.get("/orders", can("PUR_ORDERS", "view"), listOrders);
 purchasesRoutes.get("/orders/price-suggestion", can("PUR_ORDERS", "add_new"), priceSuggestion);
 purchasesRoutes.post("/orders/preview", can("PUR_ORDERS", "add_new"), previewOrder);
 purchasesRoutes.get("/orders/:id", can("PUR_ORDERS", "view"), getOrder);
+purchasesRoutes.get("/orders/:id/pdf", can("PUR_ORDERS", "view"), purchaseOrderPdf);
 purchasesRoutes.post("/orders", can("PUR_ORDERS", "add_new"), createOrder);
 purchasesRoutes.put("/orders/:id", can("PUR_ORDERS", "edit"), updateOrder);
 purchasesRoutes.delete("/orders/:id", can("PUR_ORDERS", "delete"), deleteOrder);

@@ -1,15 +1,16 @@
 /**
  * @project FabriHub - Front
  * @file src/app/inventory/components/ProductSelect.tsx
- * @description Buscador de productos por código o nombre (consulta /lookups/products con debounce)
+ * @description Buscador de productos por código, nombre o código de barras (consulta /lookups/products con debounce)
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader, Select, type SelectProps } from "@mantine/core";
+import { Group, Loader, Select, Text, type SelectProps } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { useQuery } from "@tanstack/react-query";
 import { inventoryApi } from "../services/inventory.service";
 import type { ProductOption } from "../types";
+import { ImageThumb } from "@atoms/forms/ImageField";
 
 interface Props extends Omit<SelectProps, "data" | "value" | "onChange"> {
   value: ProductOption | null;
@@ -38,16 +39,26 @@ export default function ProductSelect({ value, onChange, stockable, only, exclud
     return list.filter((p) => !excludeIds?.includes(p.id) || p.id === value?.id);
   }, [results.data, value, excludeIds]);
 
+  const byId = new Map(options.map((p) => [p.id, p]));
   return (
     <Select
       searchable
       clearable
       nothingFoundMessage="Sin coincidencias"
-      placeholder="Buscar por código o nombre"
+      placeholder="Buscar por código, nombre o código de barras"
       rightSection={results.isFetching ? <Loader size={14} /> : undefined}
       {...rest}
       filter={({ options: o }) => o}
       data={options.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))}
+      renderOption={({ option }) => {
+        const p = byId.get(option.value);
+        return (
+          <Group gap="sm" wrap="nowrap">
+            <ImageThumb url={p?.imageThumb} size={28} />
+            <Text size="sm">{option.label}</Text>
+          </Group>
+        );
+      }}
       value={value?.id ?? null}
       searchValue={search}
       onSearchChange={setSearch}

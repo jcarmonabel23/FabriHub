@@ -35,6 +35,7 @@ interface Row {
   revoked: boolean;
   recently_rotated: boolean;
   matched: "current" | "previous";
+  company_id: string | null;
 }
 
 export const refresh = handler({}, async ({ req, res }) => {
@@ -48,7 +49,8 @@ export const refresh = handler({}, async ({ req, res }) => {
               s.last_used_at < NOW() - make_interval(mins => $2) AS idle,
               s.revoked_at IS NOT NULL AS revoked,
               COALESCE(s.rotated_at > NOW() - make_interval(secs => $3), FALSE) AS recently_rotated,
-              CASE WHEN s.refresh_hash = $1 THEN 'current' ELSE 'previous' END AS matched
+              CASE WHEN s.refresh_hash = $1 THEN 'current' ELSE 'previous' END AS matched,
+              s.company_id
          FROM users_sessions s JOIN users u ON u.id = s.user_id
         WHERE s.refresh_hash = $1 OR s.prev_refresh_hash = $1
         FOR UPDATE OF s`,
@@ -100,11 +102,14 @@ export const refresh = handler({}, async ({ req, res }) => {
   return {
     accessToken: access.token,
     accessExpiresAt: access.expiresAt,
-    ...(await sessionPayload({
-      id: row.user_id,
-      email: row.email,
-      names: row.names,
-      mustChangePassword: row.must_change_password
-    }))
+    ...(await sessionPayload(
+      {
+        id: row.user_id,
+        email: row.email,
+        names: row.names,
+        mustChangePassword: row.must_change_password
+      },
+      row.company_id
+    ))
   };
 });

@@ -7,8 +7,14 @@
  * Toda escritura de negocio pasa por `withTx(ctx, fn)`: abre la transacción y fija
  * `app.user_id` y `app.trace_id` con set_config(..., true) (alcance de transacción).
  * El trigger `fn_audit()` los lee para saber QUIÉN hizo el cambio y en QUÉ petición.
+ *
+ * Multiempresa: las tablas de negocio están aisladas por RLS según `app.company_id`.
+ * La empresa activa viaja en un AsyncLocalStorage (`runInCompany`, lo abre authenticate);
+ * `query()` sobre el pool y `withTx()` la fijan en la conexión antes de consultar.
+ * Sin empresa, RLS no devuelve ni acepta filas de negocio.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import pg from "pg";
 import { config } from "./config.js";
 import { logger } from "./lib/logger.js";
@@ -39,7 +45,22 @@ export type Db = pg.Pool | pg.PoolClient;
 export interface TxContext {
   userId?: string | null;
   traceId?: string | null;
+  /** Empresa activa; si falta, la del runInCompany en curso */
+  companyId?: string | null;
 }
+
+const companyScope = new AsyncLocalStorage<{ companyId: string }>();
+
+/**
+ * @function runInCompany
+ * @description Ejecuta `fn` (y todo lo asíncrono que dispare) con `companyId` como empresa activa
+ */
+export function runInCompany<T>(companyId: string, fn: () => T): T {
+  return companyScope.run({ companyId }, fn);
+}
+
+/** Empresa activa del contexto en curso, o null */
+export const currentCompanyId = (): string | null => companyScope.getStore()?.companyId ?? null;
 
 /**
  * @function query
@@ -50,8 +71,27 @@ export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   params: unknown[] = [],
   db: Db = pool
 ): Promise<T[]> {
-  const result = await db.query<T>(text, params);
-  return result.rows;
+  const companyId = currentCompanyId();
+  if (db !== pool || !companyId) {
+    const result = await db.query<T>(text, params);
+    return result.rows;
+  }
+
+  // Conexión del pool con la empresa fijada solo durante esta consulta
+  const client = await pool.connect();
+  let broken = false;
+  try {
+    await client.query("SELECT set_config('app.company_id', $1, false)", [companyId]);
+    const result = await client.query<T>(text, params);
+    return result.rows;
+  } finally {
+    try {
+      await client.query("SELECT set_config('app.company_id', '', false)");
+    } catch {
+      broken = true; // sin limpiar, la conexión se descarta: nunca vuelve al pool con otra empresa
+    }
+    client.release(broken);
+  }
 }
 
 /**
@@ -69,16 +109,16 @@ export async function one<T extends pg.QueryResultRow = pg.QueryResultRow>(
 
 /**
  * @function withTx
- * @description Ejecuta `fn` en una transacción con app.user_id / app.trace_id fijados
+ * @description Ejecuta `fn` en una transacción con app.user_id / app.trace_id / app.company_id fijados
  */
 export async function withTx<T>(ctx: TxContext, fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT set_config('app.user_id', $1, true), set_config('app.trace_id', $2, true)", [
-      ctx.userId ?? "",
-      ctx.traceId ?? ""
-    ]);
+    await client.query(
+      "SELECT set_config('app.user_id', $1, true), set_config('app.trace_id', $2, true), set_config('app.company_id', $3, true)",
+      [ctx.userId ?? "", ctx.traceId ?? "", ctx.companyId ?? currentCompanyId() ?? ""]
+    );
     const result = await fn(client);
     await client.query("COMMIT");
     return result;

@@ -23,7 +23,8 @@ export type AuthEvent =
   | "password_reset"
   | "admin_reset"
   | "admin_unlock"
-  | "admin_revoke_sessions";
+  | "admin_revoke_sessions"
+  | "switch_company";
 
 export async function logAuth(
   req: Request,

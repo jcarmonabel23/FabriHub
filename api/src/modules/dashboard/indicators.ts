@@ -244,7 +244,7 @@ async function planning() {
 
 export async function indicatorsFor(userId: string, access: ModuleAccess) {
   const currency = await one<{ code: string; symbol: string | null }>(
-    `SELECT c.code, c.symbol FROM company co JOIN catalogs_currencies c ON c.id = co.base_currency_id LIMIT 1`
+    `SELECT c.code, c.symbol FROM companies co JOIN catalogs_currencies c ON c.id = co.base_currency_id WHERE co.id = fn_current_company()`
   );
   const [inv, qc, prd, pur, sal, pln] = await Promise.all([
     canView(access, "INV_STOCK") ? inventory(warehouseScopeOf(access, "INV_STOCK")) : null,

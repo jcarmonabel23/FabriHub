@@ -14,11 +14,13 @@ import { signOut } from "@auth/logout/logout.service";
 import { useTrackModuleVisit } from "@modules/metrics/useTrackModuleVisit";
 import { useSessionGuard } from "@modules/session/useSessionGuard";
 import HeaderMain from "./components/HeaderMain";
+import { useCompanyFavicon } from "./components/useCompanyFavicon";
 
 export default function DashboardLayout() {
   const { pathname } = useLocation();
   const { warning, secondsLeft, stayConnected } = useSessionGuard();
   useTrackModuleVisit();
+  useCompanyFavicon();
 
   const showSidebar = pathname !== "/dashboard";
 

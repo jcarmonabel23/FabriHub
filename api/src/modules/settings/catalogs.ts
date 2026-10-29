@@ -17,7 +17,11 @@ const defOf = (key: string): CatalogDef => CATALOGS[key];
 
 /** Moneda base de la compañía: no se desactiva, no se borra y no lleva tasas */
 const baseCurrencyId = async (): Promise<string | null> =>
-  (await one<{ id: string }>(`SELECT base_currency_id AS id FROM company WHERE id = 1`))?.id ?? null;
+  (await one<{ id: string }>(`SELECT base_currency_id AS id FROM companies WHERE id = fn_current_company()`))?.id ?? null;
+
+/** Las monedas son globales: ninguna empresa puede quedarse sin su moneda base */
+const isBaseOfAnyCompany = async (currencyId: string): Promise<boolean> =>
+  Boolean(await one(`SELECT 1 FROM companies WHERE base_currency_id = $1`, [currencyId]));
 
 async function isSystemRow(def: CatalogDef, id: string): Promise<boolean> {
   return Boolean((await one<{ s: boolean }>(`SELECT is_system AS s FROM ${def.table} WHERE id = $1`, [id]))?.s);
@@ -84,8 +88,8 @@ export const updateCatalogItem = handler({ params: itemParams }, async ({ params
   const def = defOf(params.key);
   const body = updateSchema(def).parse(req.body ?? {}) as Record<string, unknown>;
 
-  if (def.key === "currencies" && body.isActive === false && params.id === (await baseCurrencyId())) {
-    throw conflict("BASE_CURRENCY", "No se puede desactivar la moneda base de la empresa");
+  if (def.key === "currencies" && body.isActive === false && (await isBaseOfAnyCompany(params.id))) {
+    throw conflict("BASE_CURRENCY", "No se puede desactivar la moneda base de una empresa");
   }
   await assertSystemEditable(def, params.id, body);
 
@@ -107,8 +111,8 @@ export const updateCatalogItem = handler({ params: itemParams }, async ({ params
 
 export const deleteCatalogItem = handler({ params: itemParams }, async ({ params, req }) => {
   const def = defOf(params.key);
-  if (def.key === "currencies" && params.id === (await baseCurrencyId())) {
-    throw conflict("BASE_CURRENCY", "No se puede eliminar la moneda base de la empresa");
+  if (def.key === "currencies" && (await isBaseOfAnyCompany(params.id))) {
+    throw conflict("BASE_CURRENCY", "No se puede eliminar la moneda base de una empresa");
   }
   if (def.systemLocked && (await isSystemRow(def, params.id))) {
     throw conflict("SYSTEM_RECORD", "Es un registro del sistema (lo usan otros módulos): puede desactivarlo, no eliminarlo");
@@ -158,7 +162,7 @@ export const upsertRate = handler({ params: currencyParams, body: rateBody }, as
     client.query(
       `INSERT INTO currencies_rates (currency_id, rate_date, rate, source, created_by)
        VALUES ($1, $2, $3, $4, fn_current_app_user())
-       ON CONFLICT (currency_id, rate_date) DO UPDATE SET rate = EXCLUDED.rate, source = EXCLUDED.source`,
+       ON CONFLICT (company_id, currency_id, rate_date) DO UPDATE SET rate = EXCLUDED.rate, source = EXCLUDED.source`,
       [params.id, body.rateDate, body.rate, body.source ?? null]
     )
   );

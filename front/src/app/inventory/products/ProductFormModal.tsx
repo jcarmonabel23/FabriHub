@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import FormModal from "@atoms/forms/FormModal";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { notifyError, notifySuccess } from "@utils/notify";
+import ImageField from "@atoms/forms/ImageField";
 import { inventoryApi } from "../services/inventory.service";
 import type { ProductRow } from "../types";
 
@@ -18,6 +19,7 @@ type Form = {
   code: string;
   name: string;
   description: string;
+  barcode: string;
   productTypeId: string | null;
   familyId: string | null;
   categoryId: string | null;
@@ -46,6 +48,7 @@ const empty: Form = {
   code: "",
   name: "",
   description: "",
+  barcode: "",
   productTypeId: null,
   familyId: null,
   categoryId: null,
@@ -70,6 +73,8 @@ const empty: Form = {
   standardCost: ""
 };
 
+const BARCODE_RE = /^[0-9A-Za-z.-]{3,64}$/;
+
 const num = (v: number | string): number | null => (v === "" || v === null ? null : Number(v));
 
 const useOptions = (catalog: string) =>
@@ -88,9 +93,13 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
   const categories = useOptions("product-categories");
   const units = useOptions("units");
   const treatments = useOptions("fiscal-treatments");
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
 
   useEffect(() => {
     if (!opened) return;
+    setImageUrl(product?.image?.medium ?? null);
+    setPendingImage(null);
     if (!product) {
       setF(empty);
       return;
@@ -98,7 +107,8 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
     setF({
       ...empty,
       ...Object.fromEntries(Object.keys(empty).map((k) => [k, (product as unknown as Record<string, unknown>)[k] ?? (empty as Record<string, unknown>)[k]])),
-      description: product.description ?? ""
+      description: product.description ?? "",
+      barcode: product.barcode ?? ""
     } as Form);
   }, [opened, product]);
 
@@ -110,6 +120,7 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
       const body: Record<string, unknown> = {
         name: f.name,
         description: f.description || null,
+        barcode: f.barcode.trim() || null,
         productTypeId: f.productTypeId,
         familyId: f.familyId,
         categoryId: f.categoryId,
@@ -135,15 +146,42 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
       };
       return product ? inventoryApi.updateProduct(product.id, body) : inventoryApi.createProduct({ ...body, code: f.code });
     },
-    onSuccess: () => {
+    onSuccess: async (saved) => {
       notifySuccess(product ? "Producto actualizado" : "Producto creado");
+      // En un alta la imagen se sube cuando ya existe el producto
+      if (!product && pendingImage) {
+        try {
+          await inventoryApi.setProductImage(saved.id, pendingImage);
+        } catch (err) {
+          notifyError(err, "El producto se creó, pero la imagen no se pudo subir");
+        }
+      }
       qc.invalidateQueries({ queryKey: ["inventory", "products"] });
       onClose();
     },
     onError: (err) => notifyError(err)
   });
 
-  const valid = (Boolean(product) || /^[A-Za-z0-9._-]{1,30}$/.test(f.code)) && f.name.trim().length >= 2 && Boolean(f.productTypeId) && Boolean(f.stockUnitId);
+  // Con producto existente, la imagen se guarda al elegirla o quitarla
+  const image = useMutation({
+    mutationFn: (file: File | null) =>
+      file ? inventoryApi.setProductImage(product!.id, file) : inventoryApi.removeProductImage(product!.id),
+    onSuccess: (detail) => {
+      setImageUrl(detail.image?.medium ?? null);
+      notifySuccess(detail.image ? "Imagen actualizada" : "Imagen quitada");
+      qc.invalidateQueries({ queryKey: ["inventory", "products"] });
+    },
+    onError: (err) => notifyError(err)
+  });
+  const pickImage = (file: File) => (product ? image.mutate(file) : setPendingImage(file));
+  const removeImage = () => (product ? image.mutate(null) : setPendingImage(null));
+
+  const valid =
+    (Boolean(product) || /^[A-Za-z0-9._-]{1,30}$/.test(f.code)) &&
+    f.name.trim().length >= 2 &&
+    Boolean(f.productTypeId) &&
+    Boolean(f.stockUnitId) &&
+    (!f.barcode.trim() || BARCODE_RE.test(f.barcode.trim()));
   const hasHistory = Boolean(product && product.totalQuantity !== 0);
   const unitLabel = units.data?.find((u) => u.value === f.stockUnitId)?.label.split(" · ")[0] ?? "unidad de almacén";
 
@@ -158,12 +196,28 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
         </Tabs.List>
 
         <Tabs.Panel value="general">
-          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <div>
+            <ImageField
+              url={product ? imageUrl : null}
+              pending={pendingImage}
+              busy={image.isPending}
+              onPick={pickImage}
+              onRemove={removeImage}
+            />
+          </div>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md">
             <TextInput label="Código" required disabled={Boolean(product)} value={f.code} onChange={(e) => set("code", e.currentTarget.value.toUpperCase())} />
             <Select label="Tipo" required searchable data={types.data ?? []} value={f.productTypeId} onChange={(v) => set("productTypeId", v)} />
             <TextInput label="Nombre" required className="sm:col-span-2" value={f.name} onChange={(e) => set("name", e.currentTarget.value)} />
             <Select label="Familia" clearable searchable data={families.data ?? []} value={f.familyId} onChange={(v) => set("familyId", v)} />
             <Select label="Categoría" clearable searchable data={categories.data ?? []} value={f.categoryId} onChange={(v) => set("categoryId", v)} />
+            <TextInput
+              label="Código de barras"
+              description="EAN/UPC u otro; único en la empresa"
+              value={f.barcode}
+              error={f.barcode && !BARCODE_RE.test(f.barcode.trim()) ? "3 a 64 letras, números, punto o guion" : undefined}
+              onChange={(e) => set("barcode", e.currentTarget.value)}
+            />
           </SimpleGrid>
           <TagsInput mt="sm" label="Etiquetas" description="Agrupaciones libres (tesis: Concepto 1 al 6)" maxTags={10} value={f.tags} onChange={(v) => set("tags", v)} />
           <Textarea mt="sm" label="Descripción" autosize minRows={2} value={f.description} onChange={(e) => set("description", e.currentTarget.value)} />

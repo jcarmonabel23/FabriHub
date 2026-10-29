@@ -10,6 +10,8 @@
  *   UNA vez (single-flight: varias peticiones simultáneas esperan el mismo refresh) y reintenta.
  * - Cualquier otro 401 (sesión revocada, inactividad, reuso) cierra la sesión local.
  * - 403 PASSWORD_CHANGE_REQUIRED lleva a la pantalla de cambio obligatorio.
+ * - Envía `x-company-id` (empresa con la que se pintó la pantalla). Si la sesión cambió de empresa
+ *   en otra pestaña, la API responde 409 COMPANY_CHANGED y la página se recarga con la empresa vigente.
  */
 
 import { coreAuth } from "@auth/store/coreAuth";
@@ -37,6 +39,8 @@ interface RequestOptions {
   query?: Query;
   /** No adjunta token ni intenta refrescar (login, OTP, recuperación) */
   skipAuth?: boolean;
+  /** Archivo enviado tal cual como cuerpo (imágenes); excluye body */
+  file?: File;
 }
 
 const newTraceId = (): string =>
@@ -57,15 +61,20 @@ function buildUrl(path: string, query?: Query): string {
 async function rawFetch(path: string, opts: RequestOptions, token: string | null) {
   const traceId = newTraceId();
   const headers: Record<string, string> = { "x-trace-id": traceId };
-  if (opts.body !== undefined) headers["content-type"] = "application/json";
+  if (opts.file) {
+    headers["content-type"] = opts.file.type || "application/octet-stream";
+    headers["x-file-name"] = encodeURIComponent(opts.file.name);
+  } else if (opts.body !== undefined) headers["content-type"] = "application/json";
   if (token) headers.authorization = `Bearer ${token}`;
+  const companyId = coreAuth.getState().company?.id;
+  if (token && companyId) headers["x-company-id"] = companyId;
 
   let res: Response;
   try {
     res = await fetch(buildUrl(path, opts.query), {
       method: opts.method ?? "GET",
       headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body: opts.file ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
       credentials: "same-origin"
     });
   } catch {
@@ -157,9 +166,10 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
 
   const error = toError(res.status, json, traceId);
   if (!opts.skipAuth && res.status === 401) forceSignOut(error.code);
+  if (error.code === "COMPANY_CHANGED") window.location.reload();
   if (error.code === "PASSWORD_CHANGE_REQUIRED") {
-    const { user, setSession, modules, environment, idleMinutes } = coreAuth.getState();
-    if (user) setSession({ user: { ...user, mustChangePassword: true }, modules, environment, idleMinutes });
+    const { user, company, setSession, modules, environment, idleMinutes } = coreAuth.getState();
+    if (user) setSession({ user: { ...user, mustChangePassword: true }, company, modules, environment, idleMinutes });
   }
   throw error;
 }
@@ -169,6 +179,8 @@ export const apiPost = <T>(path: string, body?: unknown) => api<T>(path, { metho
 export const apiPut = <T>(path: string, body: unknown) => api<T>(path, { method: "PUT", body });
 export const apiPatch = <T>(path: string, body: unknown) => api<T>(path, { method: "PATCH", body });
 export const apiDelete = <T>(path: string) => api<T>(path, { method: "DELETE" });
+/** Sube un archivo como cuerpo crudo (la API valida el tipo por su contenido) */
+export const apiUpload = <T>(path: string, file: File, method: "PUT" | "POST" = "PUT") => api<T>(path, { method, file });
 
 /**
  * @function apiDownload

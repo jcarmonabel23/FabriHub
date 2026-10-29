@@ -7,6 +7,16 @@
 import { Router } from "express";
 import { requirePermission as can } from "../../security/authorize.js";
 import { AUDIT_MODULE, listAuditTables, listAuthAudit, listDataAudit } from "./audit.js";
+import {
+  COMPANIES_MODULE,
+  addCompanyMember,
+  createCompany,
+  getCompanyAdmin,
+  listCompanies,
+  listMembers,
+  removeCompanyMember,
+  updateCompanyAdmin
+} from "./companies.js";
 import { MODULES_MODULE, listModules, updateModule } from "./modules.js";
 import { ROLES_MODULE, createRole, deleteRole, listPermissions, listRoles, updateRole } from "./roles.js";
 import {
@@ -16,6 +26,7 @@ import {
   getUser,
   listSessions,
   listUsers,
+  removeUserFromCompany,
   revokeSessions,
   setUserModules,
   setUserWarehouses,
@@ -38,6 +49,16 @@ adminRoutes.put("/users/:id/modules", can(USERS_MODULE, "configure"), setUserMod
 adminRoutes.put("/users/:id/warehouses", can(USERS_MODULE, "configure"), setUserWarehouses);
 adminRoutes.get("/users/:id/sessions", can(USERS_MODULE, "view"), listSessions);
 adminRoutes.delete("/users/:id/sessions", can(USERS_MODULE, "configure"), revokeSessions);
+adminRoutes.delete("/users/:id/membership", can(USERS_MODULE, "configure"), removeUserFromCompany);
+
+// Empresas (solo administradores de plataforma: el módulo tiene alcance platform)
+adminRoutes.get("/companies", can(COMPANIES_MODULE, "view"), listCompanies);
+adminRoutes.get("/companies/:id", can(COMPANIES_MODULE, "view"), getCompanyAdmin);
+adminRoutes.post("/companies", can(COMPANIES_MODULE, "add_new"), createCompany);
+adminRoutes.patch("/companies/:id", can(COMPANIES_MODULE, "edit"), updateCompanyAdmin);
+adminRoutes.get("/companies/:id/members", can(COMPANIES_MODULE, "view"), listMembers);
+adminRoutes.post("/companies/:id/members", can(COMPANIES_MODULE, "configure"), addCompanyMember);
+adminRoutes.delete("/companies/:id/members/:userId", can(COMPANIES_MODULE, "configure"), removeCompanyMember);
 
 // Roles y permisos
 adminRoutes.get("/roles", can(ROLES_MODULE, "view"), listRoles);

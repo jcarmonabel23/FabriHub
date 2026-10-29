@@ -5,7 +5,7 @@
  */
 
 import { api } from "@clients/apiClient";
-import type { OtpChallenge, SessionPayload, TokenPayload } from "../types";
+import type { MyCompany, OtpChallenge, SessionPayload, TokenPayload } from "../types";
 
 export const signInRequest = (email: string, password: string) =>
   api<OtpChallenge>("/auth/sign-in", { method: "POST", body: { email, password }, skipAuth: true });
@@ -38,3 +38,9 @@ export const changePasswordRequest = (currentPassword: string, newPassword: stri
   api<SessionPayload>("/auth/change-password", { method: "POST", body: { currentPassword, newPassword } });
 
 export const logoutAllRequest = () => api<void>("/auth/logout-all", { method: "POST", body: {} });
+
+/** Empresas a las que pertenece el usuario (selector de la cabecera) */
+export const myCompaniesRequest = () => api<MyCompany[]>("/auth/companies");
+
+export const switchCompanyRequest = (companyId: string, makeDefault = false) =>
+  api<SessionPayload>("/auth/switch-company", { method: "POST", body: { companyId, makeDefault } });

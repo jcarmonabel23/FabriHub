@@ -8,7 +8,17 @@ import { Router } from "express";
 import { requirePermission as can } from "../../security/authorize.js";
 import { getLot, listLots, lotOptions, setLotHold, updateLot } from "./lots.js";
 import { createMovement, getMovement, listMovements, movementFormOptions, reverseMovement } from "./movements.js";
-import { createProduct, deleteProduct, getProduct, listProducts, setRelations, updateProduct } from "./products.js";
+import { rawUpload } from "../files/images.js";
+import {
+  createProduct,
+  deleteProduct,
+  getProduct,
+  listProducts,
+  removeProductImage,
+  setProductImage,
+  setRelations,
+  updateProduct
+} from "./products.js";
 import { kardex, listStock, stockAlerts, stockSummary, stockWarehouses } from "./stock.js";
 import {
   createWarehouse,
@@ -29,6 +39,8 @@ inventoryRoutes.post("/products", can("INV_PRODUCTS", "add_new"), createProduct)
 inventoryRoutes.patch("/products/:id", can("INV_PRODUCTS", "edit"), updateProduct);
 inventoryRoutes.delete("/products/:id", can("INV_PRODUCTS", "delete"), deleteProduct);
 inventoryRoutes.put("/products/:id/relations", can("INV_PRODUCTS", "edit"), setRelations);
+inventoryRoutes.put("/products/:id/image", can("INV_PRODUCTS", "edit"), rawUpload, setProductImage);
+inventoryRoutes.delete("/products/:id/image", can("INV_PRODUCTS", "edit"), removeProductImage);
 
 // Almacenes y políticas de stock
 inventoryRoutes.get("/warehouses", can("INV_WAREHOUSES", "view"), listWarehouses);

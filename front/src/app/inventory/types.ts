@@ -45,6 +45,15 @@ export interface ProductRow {
   standardCost: number | null;
   totalQuantity: number;
   updatedAt: string;
+  barcode: string | null;
+  /** URLs firmadas de la imagen (vencen en horas: no guardarlas) */
+  image: ProductImage | null;
+}
+
+export interface ProductImage {
+  thumb: string;
+  medium: string;
+  full: string;
 }
 
 export interface ProductRelation {
@@ -197,6 +206,8 @@ export interface ProductOption {
   id: string;
   code: string;
   name: string;
+  barcode?: string | null;
+  imageThumb?: string | null;
   unitCode: string;
   unitDecimals: number;
   isLotControlled: boolean;

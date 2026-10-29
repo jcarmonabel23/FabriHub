@@ -16,6 +16,7 @@ import { z } from "zod";
 import { one, query } from "../../db.js";
 import { badRequest, forbidden, handler, notFound } from "../../lib/http.js";
 import { authOf } from "../../security/context.js";
+import { companyBranding, type Branding } from "../settings/branding.js";
 import { ALERT_KINDS } from "./alerts.js";
 import { type ModuleAccess, alertVisibleTo, canView, moduleAccess, ownerScopeOf, warehouseScopeOf } from "./access.js";
 
@@ -420,7 +421,6 @@ const NUM_FMT: Partial<Record<ColType, string>> = {
   datetime: "dd/mm/yyyy hh:mm"
 };
 const DEFAULT_WIDTH: Record<ColType, number> = { text: 18, int: 10, qty: 13, money: 15, pct: 11, date: 12, datetime: 17 };
-const BRAND = "FF167C94";
 
 function cellValue(col: Column, v: unknown): ExcelJS.CellValue {
   if (v === null || v === undefined) return null;
@@ -432,26 +432,49 @@ function cellValue(col: Column, v: unknown): ExcelJS.CellValue {
   return Number(v);
 }
 
-async function buildWorkbook(def: ReportDef, rows: Record<string, unknown>[], meta: { company: string; user: string; from: string; to: string }) {
+const LOGO_HEIGHT = 48;
+
+/**
+ * Cabecera con la identidad de la empresa: logo (si tiene) en la fila 1, luego razón social y RIF,
+ * nombre del reporte y fecha de emisión. Devuelve la fila donde va el encabezado de columnas.
+ */
+function brandHeader(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, last: number, brand: Branding | null, lines: { title: string; info: string }) {
+  const color = `FF${(brand?.brandColor ?? "#167c94").slice(1).toUpperCase()}`;
+  let row = 1;
+  if (brand?.logo) {
+    const image = wb.addImage({ buffer: brand.logo.png as unknown as ExcelJS.Buffer, extension: "png" });
+    const width = Math.round((brand.logo.width / brand.logo.height) * LOGO_HEIGHT);
+    ws.addImage(image, { tl: { col: 0, row: 0 }, ext: { width, height: LOGO_HEIGHT }, editAs: "oneCell" });
+    ws.getRow(1).height = LOGO_HEIGHT * 0.78; // puntos ≈ px × 0,75 (+ margen)
+    row = 2;
+  }
+  const put = (r: number, value: string, font: Partial<ExcelJS.Font>) => {
+    ws.mergeCells(r, 1, r, last);
+    ws.getCell(r, 1).value = value;
+    ws.getCell(r, 1).font = font;
+  };
+  put(row, brand ? `${brand.legalName} · RIF ${brand.rif}` : "FabriHub", { bold: true, size: 14, color: { argb: color } });
+  put(row + 1, lines.title, { bold: true, size: 12 });
+  put(row + 2, lines.info, { size: 9, color: { argb: "FF6B7280" } });
+  return { headerRow: row + 4, color };
+}
+
+async function buildWorkbook(def: ReportDef, rows: Record<string, unknown>[], meta: { brand: Branding | null; user: string; from: string; to: string }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = "FabriHub";
   wb.created = new Date();
-  const ws = wb.addWorksheet(def.name.slice(0, 31), { views: [{ state: "frozen", ySplit: 5 }] });
   const last = def.columns.length;
+  const headerRowNo = meta.brand?.logo ? 6 : 5;
+  const ws = wb.addWorksheet(def.name.slice(0, 31), { views: [{ state: "frozen", ySplit: headerRowNo }] });
 
-  ws.mergeCells(1, 1, 1, last);
-  ws.getCell(1, 1).value = meta.company;
-  ws.getCell(1, 1).font = { bold: true, size: 14, color: { argb: BRAND } };
-  ws.mergeCells(2, 1, 2, last);
-  ws.getCell(2, 1).value = def.name;
-  ws.getCell(2, 1).font = { bold: true, size: 12 };
-  ws.mergeCells(3, 1, 3, last);
   const range = def.ranged ? `Del ${meta.from.split("-").reverse().join("/")} al ${meta.to.split("-").reverse().join("/")} · ` : "";
   const now = new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: "America/Caracas" }).format(new Date());
-  ws.getCell(3, 1).value = `${range}Generado el ${now} por ${meta.user} · ${rows.length} fila(s)`;
-  ws.getCell(3, 1).font = { size: 9, color: { argb: "FF6B7280" } };
+  const { color: BRAND } = brandHeader(wb, ws, last, meta.brand, {
+    title: def.name,
+    info: `${range}Emitido el ${now} por ${meta.user} · ${rows.length} fila(s)`
+  });
 
-  const header = ws.getRow(5);
+  const header = ws.getRow(headerRowNo);
   def.columns.forEach((c, i) => {
     const cell = header.getCell(i + 1);
     cell.value = c.header;
@@ -466,7 +489,7 @@ async function buildWorkbook(def: ReportDef, rows: Record<string, unknown>[], me
 
   for (const r of rows) ws.addRow(def.columns.map((c) => cellValue(c, r[c.key])));
 
-  const firstData = 6;
+  const firstData = headerRowNo + 1;
   const lastData = firstData + rows.length - 1;
   if (rows.length > 0 && def.columns.some((c) => c.total)) {
     const totals = ws.getRow(lastData + 2);
@@ -480,14 +503,14 @@ async function buildWorkbook(def: ReportDef, rows: Record<string, unknown>[], me
     totals.font = { bold: true };
     totals.eachCell((cell) => (cell.border = { top: { style: "thin", color: { argb: "FF9CA3AF" } } }));
   }
-  if (rows.length > 0) ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: lastData, column: last } };
+  if (rows.length > 0) ws.autoFilter = { from: { row: headerRowNo, column: 1 }, to: { row: lastData, column: last } };
   return wb.xlsx.writeBuffer();
 }
 
 export const downloadReport = handler({ params: codeParams, query: rangeQuery }, async ({ params, query: q, req, res }) => {
   const { def, rows, from, to } = await prepare(req, params.code, q);
-  const company = await one<{ name: string }>(`SELECT COALESCE(trade_name, legal_name) AS name FROM company LIMIT 1`);
-  const buffer = await buildWorkbook(def, rows, { company: company?.name ?? "FabriHub", user: authOf(req).names, from, to });
+  const brand = await companyBranding(authOf(req).companyId);
+  const buffer = await buildWorkbook(def, rows, { brand, user: authOf(req).names, from, to });
   const stamp = def.ranged ? `${from}_${to}` : to;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="FabriHub_${def.code}_${stamp}.xlsx"`);

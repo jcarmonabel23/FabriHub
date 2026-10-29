@@ -36,6 +36,11 @@ export interface CatalogDef {
    * campos no se pueden cambiar (los usa el código de otros módulos).
    */
   systemLocked?: string[];
+  /**
+   * Tabla global (sin company_id, compartida por todas las empresas): solo un administrador de
+   * plataforma la modifica; los demás la consultan.
+   */
+  global?: boolean;
 }
 
 const defaultCode = z
@@ -95,6 +100,7 @@ export const CATALOGS: Record<string, CatalogDef> = {
     table: "catalogs_currencies",
     label: "Monedas",
     module: SET_COMMERCIAL,
+    global: true,
     codeSchema: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/, "Código ISO 4217 de 3 letras"),
     extra: [
       { key: "symbol", column: "symbol", schema: z.string().trim().min(1).max(8) },
@@ -108,6 +114,7 @@ export const CATALOGS: Record<string, CatalogDef> = {
     table: "catalogs_units",
     label: "Unidades",
     module: INV_CATALOGS,
+    global: true,
     extra: [{ key: "decimals", column: "decimals", schema: z.number().int().min(0).max(6) }]
   },
   "product-types": {
@@ -115,6 +122,7 @@ export const CATALOGS: Record<string, CatalogDef> = {
     table: "catalogs_product_types",
     label: "Tipos de producto",
     module: INV_CATALOGS,
+    global: true,
     extra: [
       {
         key: "nature",
@@ -142,6 +150,7 @@ export const CATALOGS: Record<string, CatalogDef> = {
     table: "catalogs_movement_concepts",
     label: "Conceptos de movimiento",
     module: INV_CATALOGS,
+    global: true,
     extra: [
       { key: "movementTypeId", column: "movement_type_id", schema: z.uuid() },
       { key: "moduleCode", column: "module_code", schema: z.enum(["INVENTORY", "PURCHASES", "SALES", "PRODUCTION"]) },

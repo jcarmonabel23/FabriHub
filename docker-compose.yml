@@ -111,6 +111,10 @@ services:
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:8080}   # enlaces de los correos de alertas
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD}
+      UPLOADS_DIR: /data/uploads                      # imágenes subidas (volumen uploads)
+      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-5}
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
@@ -188,6 +192,28 @@ services:
       db: { condition: service_healthy }
     networks: [red_datos]
 
+  # Respaldo diario del volumen de archivos (las imágenes no están en pg_dump). Conserva 14 días.
+  backup-files:
+    <<: *endurecido
+    image: alpine:3.20
+    container_name: fabrihub-backup-files
+    network_mode: none
+    environment:
+      TZ: ${TZ}
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /backups/uploads
+        while true; do
+          tar czf /backups/uploads/uploads-$(date +%Y%m%d).tar.gz -C /uploads . && echo "[backup-files] ok $(date)"
+          find /backups/uploads -name "uploads-*.tar.gz" -mtime +14 -delete
+          sleep 86400
+        done
+    volumes:
+      - uploads:/uploads:ro
+      - ./backups:/backups
+
   # ------------------------------------------------------------ pgAdmin (sólo local, perfil tools)
   pgadmin:
     <<: *endurecido
@@ -211,4 +237,5 @@ networks:
 
 volumes:
   pg_data:
+  uploads:                 # imágenes subidas (fase 11); la respalda backup-files
   pgadmin_data:

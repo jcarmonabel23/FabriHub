@@ -13,6 +13,10 @@ export interface AuthContext {
   email: string;
   names: string;
   mustChangePassword: boolean;
+  /** Empresa activa de la sesión (app.company_id) */
+  companyId: string;
+  /** Administra la plataforma: empresas, roles, módulos y datos globales */
+  isPlatformAdmin: boolean;
 }
 
 declare global {
@@ -36,7 +40,11 @@ export const clientInfo = (req: Request) => ({
 });
 
 /** Contexto de auditoría para withTx() */
-export const txCtx = (req: Request): TxContext => ({ userId: req.auth?.userId ?? null, traceId: req.traceId });
+export const txCtx = (req: Request): TxContext => ({
+  userId: req.auth?.userId ?? null,
+  traceId: req.traceId,
+  companyId: req.auth?.companyId ?? null
+});
 
 /** Usuario autenticado (lanza si la ruta olvidó `authenticate`) */
 export function authOf(req: Request): AuthContext {

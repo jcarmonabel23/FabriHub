@@ -6,6 +6,7 @@
 
 import { Router } from "express";
 import { requirePermission as can } from "../../security/authorize.js";
+import { deliveryNotePdf, salesOrderPdf } from "../documents/pdfs.js";
 import { priceListRoutes } from "../pricing/priceLists.js";
 import {
   addCustomerContact,
@@ -54,6 +55,7 @@ salesRoutes.get("/orders", can("SAL_ORDERS", "view"), listOrders);
 salesRoutes.get("/orders/price-suggestion", can("SAL_ORDERS", "add_new"), priceSuggestion);
 salesRoutes.post("/orders/preview", can("SAL_ORDERS", "add_new"), previewOrder);
 salesRoutes.get("/orders/:id", can("SAL_ORDERS", "view"), getOrder);
+salesRoutes.get("/orders/:id/pdf", can("SAL_ORDERS", "view"), salesOrderPdf);
 salesRoutes.post("/orders", can("SAL_ORDERS", "add_new"), createOrder);
 salesRoutes.put("/orders/:id", can("SAL_ORDERS", "edit"), updateOrder);
 salesRoutes.delete("/orders/:id", can("SAL_ORDERS", "delete"), deleteOrder);
@@ -70,5 +72,6 @@ salesRoutes.get("/deliveries/pending-orders", can("SAL_DELIVERY_NOTES", "add_new
 salesRoutes.get("/deliveries/order/:id", can("SAL_DELIVERY_NOTES", "add_new"), orderForDelivery);
 salesRoutes.get("/deliveries/trace", can("SAL_DELIVERY_NOTES", "view"), traceLot);
 salesRoutes.get("/deliveries/:id", can("SAL_DELIVERY_NOTES", "view"), getDelivery);
+salesRoutes.get("/deliveries/:id/pdf", can("SAL_DELIVERY_NOTES", "view"), deliveryNotePdf);
 salesRoutes.post("/orders/:id/deliveries", can("SAL_DELIVERY_NOTES", "add_new"), deliverOrder);
 salesRoutes.post("/deliveries/:id/cancel", can("SAL_DELIVERY_NOTES", "delete"), cancelDelivery);

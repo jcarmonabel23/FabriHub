@@ -9,16 +9,19 @@ import {
   IconAdjustments,
   IconApps,
   IconArrowsExchange,
-  IconBellRinging,
   IconBarcode,
+  IconBellRinging,
   IconBuilding,
   IconBuildingFactory2,
   IconBuildingWarehouse,
   IconCalendarStats,
+  IconCash,
+  IconCashRegister,
   IconCategory,
   IconChartBar,
   IconClipboardList,
   IconCurrencyDollar,
+  IconDeviceDesktop,
   IconFileCertificate,
   IconFileDollar,
   IconFileInvoice,
@@ -41,6 +44,7 @@ import {
   IconScale,
   IconSettings,
   IconShieldLock,
+  IconShoppingBag,
   IconShoppingCart,
   IconStack2,
   IconTags,
@@ -49,9 +53,9 @@ import {
   IconTruck,
   IconTruckDelivery,
   IconUserDollar,
+  IconUserStar,
   IconUsers,
   IconUsersGroup,
-  IconUserStar,
   type IconProps
 } from "@tabler/icons-react";
 
@@ -101,6 +105,10 @@ const ICONS: Record<string, ComponentType<IconProps>> = {
   "user-dollar": IconUserDollar,
   users: IconUsers,
   "users-group": IconUsersGroup,
+  "cash-register": IconCashRegister,
+  "shopping-bag": IconShoppingBag,
+  cash: IconCash,
+  "device-desktop": IconDeviceDesktop,
   "user-star": IconUserStar
 };
 

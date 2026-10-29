@@ -21,6 +21,7 @@ import {
   IconSearch,
   IconStack2,
   IconUserCheck,
+  IconUserMinus,
   IconUserOff
 } from "@tabler/icons-react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,6 +42,8 @@ import UserFormModal from "./components/UserFormModal";
 const MODULE_CODE = "ADM_USERS";
 const PAGE_SIZE = 20;
 
+type Kind = "unlock" | "reset" | "revoke" | "toggle" | "remove";
+
 const STATUS_OPTIONS = [
   { value: "", label: "Todos" },
   { value: "active", label: "Activos" },
@@ -53,6 +56,7 @@ export default function UsersAdminPage() {
   const qc = useQueryClient();
   const can = useCan(MODULE_CODE);
   const me = coreAuth((s) => s.user?.id);
+  const companyName = coreAuth((s) => s.company?.name ?? "esta empresa");
 
   const [search, setSearch] = useState("");
   const [debounced] = useDebouncedValue(search, 350);
@@ -72,7 +76,8 @@ export default function UsersAdminPage() {
   const refresh = () => qc.invalidateQueries({ queryKey: ["admin", "users"] });
 
   const action = useMutation({
-    mutationFn: async ({ kind, user }: { kind: "unlock" | "reset" | "revoke" | "toggle"; user: UserRow }) => {
+    mutationFn: async ({ kind, user }: { kind: Kind; user: UserRow }) => {
+      if (kind === "remove") return adminApi.removeFromCompany(user.id).then(() => "Usuario retirado de la empresa");
       if (kind === "unlock") return adminApi.unlockUser(user.id).then(() => "Cuenta desbloqueada");
       if (kind === "reset") return adminApi.resetPassword(user.id).then((r) => r.message);
       if (kind === "revoke") return adminApi.revokeSessions(user.id).then(() => "Sesiones cerradas");
@@ -85,20 +90,24 @@ export default function UsersAdminPage() {
     onError: (err) => notifyError(err)
   });
 
-  const confirm = (kind: "unlock" | "reset" | "revoke" | "toggle", user: UserRow) => {
+  const confirm = (kind: Kind, user: UserRow) => {
     const texts = {
       unlock: ["Desbloquear cuenta", `Se reiniciarán los intentos fallidos de ${user.names}.`],
       reset: ["Reiniciar contraseña", `Se enviará una contraseña temporal a ${user.email}, se cerrarán sus sesiones y deberá cambiarla al entrar.`],
       revoke: ["Cerrar sesiones", `Se cerrarán todas las sesiones abiertas de ${user.names} de inmediato.`],
+      remove: [
+        "Quitar de la empresa",
+        `${user.names} pierde sus módulos y almacenes en ${companyName}. Su cuenta sigue activa en sus otras empresas.`
+      ],
       toggle: user.isActive
-        ? ["Desactivar usuario", `${user.names} no podrá iniciar sesión y sus sesiones se cerrarán de inmediato.`]
+        ? ["Desactivar usuario", `${user.names} no podrá iniciar sesión en ninguna empresa y sus sesiones se cerrarán de inmediato.`]
         : ["Activar usuario", `${user.names} podrá volver a iniciar sesión.`]
     }[kind];
     modals.openConfirmModal({
       title: texts[0],
       children: <Text size="sm">{texts[1]}</Text>,
       labels: { confirm: "Confirmar", cancel: "Cancelar" },
-      confirmProps: { color: kind === "toggle" && user.isActive ? "red" : "petrol" },
+      confirmProps: { color: kind === "remove" || (kind === "toggle" && user.isActive) ? "red" : "petrol" },
       onConfirm: () => action.mutate({ kind, user })
     });
   };
@@ -192,6 +201,11 @@ export default function UsersAdminPage() {
                   <Menu.Item leftSection={<IconLogout size={16} />} onClick={() => confirm("revoke", u)} disabled={!u.activeSessions}>
                     Cerrar sesiones
                   </Menu.Item>
+                  {u.id !== me && (
+                    <Menu.Item color="red" leftSection={<IconUserMinus size={16} />} onClick={() => confirm("remove", u)}>
+                      Quitar de la empresa
+                    </Menu.Item>
+                  )}
                 </>
               )}
               {can("edit") && u.id !== me && (

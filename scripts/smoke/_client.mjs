@@ -5,6 +5,8 @@
  */
 
 export const API = process.env.API_URL ?? "http://api:4000/api/v1";
+/** Origen de la API (las URLs firmadas de imágenes vienen como /api/v1/...) */
+export const API_ORIGIN = new URL(API).origin;
 export const MAIL = process.env.MAILPIT_URL ?? "http://mailpit:8025/api/v1";
 export const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 export const ADMIN_INITIAL = process.env.ADMIN_INITIAL_PASSWORD;
@@ -28,13 +30,20 @@ export function check(name, condition, extra) {
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function call(method, path, { token, body, cookie } = {}) {
-  const headers = { "content-type": "application/json" };
+/** Un Buffer como body se envía crudo (subida de archivos), con el content-type de headers */
+export async function call(method, path, { token, body, cookie, headers: extra } = {}) {
+  const raw = Buffer.isBuffer(body);
+  const headers = { "content-type": raw ? "application/octet-stream" : "application/json", ...extra };
   if (token) headers.authorization = `Bearer ${token}`;
   if (cookie) headers.cookie = cookie;
-  const res = await fetch(`${API}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(`${API}${path}`, { method, headers, body: raw ? body : body ? JSON.stringify(body) : undefined });
   const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = { raw: text.slice(0, 200) };
+  }
   const setCookie = res.headers.get("set-cookie");
   const refresh = setCookie?.match(/fh_refresh=([^;]*)/)?.[1];
   return { status: res.status, json, code: json?.error?.code, cookie: refresh ? `fh_refresh=${refresh}` : undefined };
@@ -65,6 +74,12 @@ export async function login(email, password) {
   return { step1, step2, token: step2.json?.accessToken, cookie: step2.cookie };
 }
 
+/**
+ * Usuarios creados con createUserWith y su sesión. Las suites posteriores los reutilizan
+ * (reasignándoles módulos) en vez de abrir sesiones nuevas: cada login cuenta para AUTH_RATE_LIMIT.
+ */
+export const knownUsers = [];
+
 /** Crea un usuario, le asigna módulos y lo deja listo para usar (contraseña ya cambiada) */
 export async function createUserWith(adminToken, email, names, assignments, newPassword = "Prueba#Segura2026") {
   const created = await call("POST", "/admin/users", { token: adminToken, body: { email, names } });
@@ -72,6 +87,7 @@ export async function createUserWith(adminToken, email, names, assignments, newP
   await call("PUT", `/admin/users/${created.json.id}/modules`, { token: adminToken, body: { assignments } });
   const s = await login(email, temp);
   await call("POST", "/auth/change-password", { token: s.token, body: { currentPassword: temp, newPassword } });
+  knownUsers.push({ id: created.json.id, email, token: s.token });
   return { id: created.json.id, token: s.token };
 }
 

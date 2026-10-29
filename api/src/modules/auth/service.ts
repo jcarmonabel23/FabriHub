@@ -7,11 +7,12 @@
 import type { Request, Response } from "express";
 import type pg from "pg";
 import { config } from "../../config.js";
-import { query, type Db } from "../../db.js";
+import { one, query, runInCompany, type Db } from "../../db.js";
 import { hmac, otpCode, randomToken, safeEqualHex, sha256 } from "../../lib/crypto.js";
 import { sessionModules, type SessionModule } from "../../security/authorize.js";
 import { clientInfo } from "../../security/context.js";
 import { setRefreshCookie, signAccessToken } from "../../security/tokens.js";
+import { brandingUrls } from "../settings/branding.js";
 
 export interface UserRow {
   id: string;
@@ -32,10 +33,23 @@ export interface SessionUser {
   email: string;
   names: string;
   mustChangePassword: boolean;
+  /** Lo calcula sessionPayload */
+  isPlatformAdmin?: boolean;
+}
+
+/** Empresa activa de la sesión, con su identidad (URLs firmadas: se renuevan con cada refresh) */
+export interface SessionCompany {
+  id: string;
+  code: string;
+  name: string;
+  brandColor: string | null;
+  logo: { header: string; doc: string } | null;
+  icon: { favicon: string; app: string } | null;
 }
 
 export interface SessionPayload {
   user: SessionUser;
+  company: SessionCompany | null;
   modules: SessionModule[];
   environment: string;
   idleMinutes: number;
@@ -53,10 +67,21 @@ export function maskEmail(email: string): string {
   return `${local[0]}${"*".repeat(Math.min(local.length - 2, 6))}${local.at(-1)}@${domain}`;
 }
 
-export async function sessionPayload(user: SessionUser): Promise<SessionPayload> {
+export async function sessionPayload(user: SessionUser, companyId: string | null): Promise<SessionPayload> {
+  const flags = await one<{ is_platform_admin: boolean }>(`SELECT is_platform_admin FROM users WHERE id = $1`, [user.id]);
+  const row = companyId
+    ? await one<{ id: string; code: string; name: string; logo_file_id: string | null; icon_file_id: string | null; brand_color: string | null }>(
+        `SELECT id, code, COALESCE(trade_name, legal_name) AS name, logo_file_id, icon_file_id, brand_color
+           FROM companies WHERE id = $1`,
+        [companyId]
+      )
+    : null;
+  const company: SessionCompany | null = row ? { id: row.id, code: row.code, name: row.name, ...brandingUrls(row) } : null;
   return {
-    user,
-    modules: await sessionModules(user.id),
+    user: { ...user, isPlatformAdmin: flags?.is_platform_admin ?? false },
+    company,
+    // Los permisos son por empresa: se leen con la empresa de la sesión activa
+    modules: company ? await runInCompany(company.id, () => sessionModules(user.id)) : [],
     environment: config.APP_ENVIRONMENT,
     idleMinutes: config.SESSION_IDLE_MINUTES
   };
@@ -64,23 +89,32 @@ export async function sessionPayload(user: SessionUser): Promise<SessionPayload>
 
 /**
  * @function openSession
- * @description Crea la sesión, entrega el refresh en cookie httpOnly y devuelve el access token
+ * @description Crea la sesión, entrega el refresh en cookie httpOnly y devuelve el access token.
+ * La sesión arranca en la empresa por defecto del usuario (o la primera activa que tenga).
  */
 export async function openSession(db: Db, req: Request, res: Response, user: SessionUser): Promise<TokenPayload> {
   const refreshToken = randomToken();
   const expiresAt = new Date(Date.now() + config.JWT_REFRESH_TTL_HOURS * 3600 * 1000);
   const { ip, userAgent } = clientInfo(req);
 
-  const [session] = await query<{ id: string }>(
-    `INSERT INTO users_sessions (user_id, refresh_hash, ip_address, user_agent, expires_at)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+  const [session] = await query<{ id: string; company_id: string | null }>(
+    `INSERT INTO users_sessions (user_id, refresh_hash, ip_address, user_agent, expires_at, company_id)
+     VALUES ($1, $2, $3, $4, $5,
+             (SELECT uc.company_id FROM users_companies uc JOIN companies c ON c.id = uc.company_id AND c.is_active
+               WHERE uc.user_id = $1 AND uc.is_active
+               ORDER BY uc.is_default DESC, uc.created_at LIMIT 1))
+     RETURNING id, company_id`,
     [user.id, sha256(refreshToken), ip, userAgent, expiresAt],
     db
   );
 
   setRefreshCookie(res, refreshToken, expiresAt);
   const access = signAccessToken(user.id, session.id);
-  return { accessToken: access.token, accessExpiresAt: access.expiresAt, ...(await sessionPayload(user)) };
+  return {
+    accessToken: access.token,
+    accessExpiresAt: access.expiresAt,
+    ...(await sessionPayload(user, session.company_id))
+  };
 }
 
 export async function revokeAllSessions(db: Db, userId: string, reason: string, exceptSessionId?: string) {

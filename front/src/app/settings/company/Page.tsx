@@ -1,15 +1,20 @@
 /**
  * @project FabriHub - Front
  * @file src/app/settings/company/Page.tsx
- * @description Parámetros → Empresa (SET_COMPANY): datos fiscales y moneda base
+ * @description Parámetros → Empresa (SET_COMPANY): identidad, datos fiscales y moneda base
+ *
+ * El logo y el ícono se guardan al elegirlos; tras cambiarlos se renueva la sesión para que la
+ * cabecera y el favicon los muestren de inmediato.
  */
 
 import { useEffect, useState } from "react";
-import { Alert, Button, Group, Loader, Paper, Select, SimpleGrid, Stack, Switch, TagsInput, Text, TextInput, Textarea, Title } from "@mantine/core";
+import { Alert, Button, ColorInput, Group, Loader, Paper, Select, SimpleGrid, Stack, Switch, TagsInput, Text, TextInput, Textarea, Title } from "@mantine/core";
 import { IconAlertTriangle, IconDeviceFloppy } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
+import ImageField from "@atoms/forms/ImageField";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
+import { refreshSession } from "@clients/apiClient";
 import { useCan } from "@modules/access-control/useCan";
 import { fmtDateTime } from "@utils/format";
 import { notifyError, notifySuccess } from "@utils/notify";
@@ -20,7 +25,9 @@ import type { Company } from "../types";
 const RIF_RE = /^[VEJPG]-\d{8}-\d$/;
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: dayjs().month(i).format("MMMM") }));
 
-type Form = Omit<Company, "baseCurrencyCode" | "updatedAt">;
+type Form = Omit<Company, "baseCurrencyCode" | "updatedAt" | "logo" | "icon">;
+type ImageKind = "logo" | "icon";
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 export default function CompanyPage() {
   const qc = useQueryClient();
@@ -32,7 +39,7 @@ export default function CompanyPage() {
 
   useEffect(() => {
     if (company.data) {
-      const { baseCurrencyCode: _c, updatedAt: _u, ...rest } = company.data;
+      const { baseCurrencyCode: _c, updatedAt: _u, logo: _l, icon: _i, ...rest } = company.data;
       setForm(rest);
     }
   }, [company.data]);
@@ -42,6 +49,18 @@ export default function CompanyPage() {
     onSuccess: (data) => {
       notifySuccess("Datos de la empresa guardados");
       qc.setQueryData(["settings", "company"], data);
+      void refreshSession().catch(() => undefined);
+    },
+    onError: (err) => notifyError(err)
+  });
+
+  const image = useMutation({
+    mutationFn: ({ kind, file }: { kind: ImageKind; file: File | null }) =>
+      file ? settingsApi.setCompanyImage(kind, file) : settingsApi.removeCompanyImage(kind),
+    onSuccess: (branding, { kind, file }) => {
+      notifySuccess(`${kind === "logo" ? "Logo" : "Ícono"} ${file ? "actualizado" : "quitado"}`);
+      qc.setQueryData<Company>(["settings", "company"], (c) => (c ? { ...c, logo: branding.logo, icon: branding.icon } : c));
+      void refreshSession().catch(() => undefined);
     },
     onError: (err) => notifyError(err)
   });
@@ -56,6 +75,8 @@ export default function CompanyPage() {
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm({ ...form, [k]: v });
   const rifOk = RIF_RE.test(form.rif.toUpperCase());
+  const colorOk = !form.brandColor || COLOR_RE.test(form.brandColor);
+  const busy = (kind: ImageKind) => image.isPending && image.variables?.kind === kind;
   const isPlaceholder = company.data.rif === "J-00000000-0";
 
   return (
@@ -71,10 +92,51 @@ export default function CompanyPage() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (rifOk && !readOnly) save.mutate();
+          if (rifOk && colorOk && !readOnly) save.mutate();
         }}
       >
         <Stack gap="lg" maw={980}>
+          <Paper withBorder radius="lg" p="lg">
+            <Title order={5}>Identidad</Title>
+            <Text size="sm" c="dimmed" mb="md">
+              Se muestra en la cabecera del sitio, los reportes Excel, los documentos PDF y los correos de esta empresa.
+            </Text>
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl">
+              <ImageField
+                label="Logo"
+                hint="Horizontal, de preferencia con fondo transparente (PNG). PNG, JPG o WebP hasta 5 MB."
+                previewClassName="w-48 h-20"
+                url={company.data.logo?.header ?? null}
+                busy={busy("logo")}
+                disabled={readOnly}
+                onPick={(file) => image.mutate({ kind: "logo", file })}
+                onRemove={() => image.mutate({ kind: "logo", file: null })}
+              />
+              <ImageField
+                label="Ícono"
+                hint="Cuadrado, se usa como ícono de la pestaña del navegador. Mínimo 64 × 64 px."
+                previewClassName="w-20 h-20"
+                url={company.data.icon?.app ?? null}
+                busy={busy("icon")}
+                disabled={readOnly}
+                onPick={(file) => image.mutate({ kind: "icon", file })}
+                onRemove={() => image.mutate({ kind: "icon", file: null })}
+              />
+              <ColorInput
+                label="Color de marca"
+                description="Acentos de la cabecera, los documentos y los correos. Vacío = color de FabriHub. Se guarda con «Guardar cambios»."
+                placeholder="#167c94"
+                format="hex"
+                maw={320}
+                readOnly={readOnly}
+                swatches={["#167c94", "#1d4ed8", "#047857", "#b45309", "#b91c1c", "#7c3aed", "#0f172a"]}
+                value={form.brandColor ?? ""}
+                onChange={(v) => set("brandColor", v || null)}
+                error={colorOk ? null : "Use el formato #rrggbb"}
+              />
+            </SimpleGrid>
+          </Paper>
+
           <Paper withBorder radius="lg" p="lg">
             <Title order={5} mb="md">
               Identificación
@@ -160,7 +222,7 @@ export default function CompanyPage() {
               Última modificación: {fmtDateTime(company.data.updatedAt)}
             </Text>
             {!readOnly && (
-              <Button type="submit" leftSection={<IconDeviceFloppy size={16} />} loading={save.isPending} disabled={!rifOk || form.legalName.trim().length < 3}>
+              <Button type="submit" leftSection={<IconDeviceFloppy size={16} />} loading={save.isPending} disabled={!rifOk || !colorOk || form.legalName.trim().length < 3}>
                 Guardar cambios
               </Button>
             )}

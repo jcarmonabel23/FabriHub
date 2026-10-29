@@ -1,21 +1,32 @@
 /**
  * @project FabriHub - API
  * @file src/modules/settings/company.ts
- * @description Datos de la empresa (SET_COMPANY): fila única
+ * @description Datos de la empresa activa (SET_COMPANY)
+ *
+ * El logo y el ícono se suben aparte (branding.ts); aquí se devuelven como URLs firmadas.
  */
 
 import { z } from "zod";
 import { one, withTx } from "../../db.js";
 import { badRequest, handler } from "../../lib/http.js";
 import { txCtx } from "../../security/context.js";
+import { brandingUrls } from "./branding.js";
 
 const SELECT = `SELECT c.legal_name AS "legalName", c.trade_name AS "tradeName", c.rif, c.address, c.city, c.state,
   c.country, c.phones, c.email, c.website, c.base_currency_id AS "baseCurrencyId", cur.code AS "baseCurrencyCode",
   c.is_special_taxpayer AS "isSpecialTaxpayer", c.is_withholding_agent AS "isWithholdingAgent",
-  c.fiscal_year_start_month AS "fiscalYearStartMonth", c.updated_at AS "updatedAt"
-  FROM company c JOIN catalogs_currencies cur ON cur.id = c.base_currency_id WHERE c.id = 1`;
+  c.fiscal_year_start_month AS "fiscalYearStartMonth", c.updated_at AS "updatedAt",
+  c.id, c.logo_file_id, c.icon_file_id, c.brand_color
+  FROM companies c JOIN catalogs_currencies cur ON cur.id = c.base_currency_id WHERE c.id = fn_current_company()`;
 
-export const getCompany = handler({}, () => one(SELECT));
+async function companySettings() {
+  const row = await one<{ id: string; logo_file_id: string | null; icon_file_id: string | null; brand_color: string | null }>(SELECT);
+  if (!row) return null;
+  const { id: _id, logo_file_id: _l, icon_file_id: _i, brand_color: _b, ...data } = row;
+  return { ...data, ...brandingUrls(row) };
+}
+
+export const getCompany = handler({}, () => companySettings());
 
 const optionalText = (max: number) =>
   z
@@ -43,7 +54,14 @@ const body = z.object({
   baseCurrencyId: z.uuid(),
   isSpecialTaxpayer: z.boolean(),
   isWithholdingAgent: z.boolean(),
-  fiscalYearStartMonth: z.number().int().min(1).max(12)
+  fiscalYearStartMonth: z.number().int().min(1).max(12),
+  /** Color de marca (#rrggbb); null lo quita, ausente lo conserva */
+  brandColor: z
+    .string()
+    .trim()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Color: #rrggbb")
+    .transform((v) => v.toLowerCase())
+    .nullish()
 });
 
 export const updateCompany = handler({ body }, async ({ body: b, req }) => {
@@ -52,11 +70,12 @@ export const updateCompany = handler({ body }, async ({ body: b, req }) => {
 
   await withTx(txCtx(req), (client) =>
     client.query(
-      `UPDATE company SET legal_name = $1, trade_name = $2, rif = $3, address = $4, city = $5, state = $6,
+      `UPDATE companies SET legal_name = $1, trade_name = $2, rif = $3, address = $4, city = $5, state = $6,
               country = $7, phones = $8, email = $9, website = $10, base_currency_id = $11,
               is_special_taxpayer = $12, is_withholding_agent = $13, fiscal_year_start_month = $14,
+              brand_color = CASE WHEN $15::boolean THEN $16 ELSE brand_color END,
               updated_by = fn_current_app_user()
-        WHERE id = 1`,
+        WHERE id = fn_current_company()`,
       [
         b.legalName,
         b.tradeName ?? null,
@@ -71,9 +90,11 @@ export const updateCompany = handler({ body }, async ({ body: b, req }) => {
         b.baseCurrencyId,
         b.isSpecialTaxpayer,
         b.isWithholdingAgent,
-        b.fiscalYearStartMonth
+        b.fiscalYearStartMonth,
+        b.brandColor !== undefined,
+        b.brandColor ?? null
       ]
     )
   );
-  return one(SELECT);
+  return companySettings();
 });

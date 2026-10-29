@@ -41,5 +41,8 @@ export const changePassword = handler({ body }, async ({ body, req }) => {
   });
   await logAuth(req, "password_change", true, { userId: auth.userId, email: auth.email });
 
-  return sessionPayload({ id: auth.userId, email: auth.email, names: auth.names, mustChangePassword: false });
+  return sessionPayload(
+    { id: auth.userId, email: auth.email, names: auth.names, mustChangePassword: false },
+    auth.companyId
+  );
 });

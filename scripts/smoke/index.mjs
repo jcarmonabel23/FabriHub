@@ -13,6 +13,10 @@ import * as production from "./production.mjs";
 import * as sales from "./sales.mjs";
 import * as planning from "./planning.mjs";
 import * as dashboard from "./dashboard.mjs";
+import * as companies from "./companies.mjs";
+import * as files from "./files.mjs";
+import * as branding from "./branding.mjs";
+import * as pos from "./pos.mjs";
 import * as ratelimit from "./ratelimit.mjs";
 
 const SUITES = [
@@ -24,6 +28,10 @@ const SUITES = [
   ["Fase 6 · Ventas", sales],
   ["Fase 7 · Planificación", planning],
   ["Fase 8 · Tablero y alertas", dashboard],
+  ["Fase 10 · Multiempresa", companies],
+  ["Fase 11 · Archivos e imagen de producto", files],
+  ["Fase 12 · Identidad de cada empresa", branding],
+  ["Fase 13 · Punto de venta", pos],
   ["Límite por IP", ratelimit]
 ];
 

@@ -4,7 +4,7 @@
  * @description Llamadas a /inventory/* y al buscador de productos
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@clients/apiClient";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut, apiUpload } from "@clients/apiClient";
 import type { Page } from "@admin/types";
 import type {
   Alerts,
@@ -34,6 +34,8 @@ export const inventoryApi = {
   updateProduct: (id: string, b: Body) => apiPatch<ProductDetail>(`/inventory/products/${id}`, b),
   deleteProduct: (id: string) => apiDelete<void>(`/inventory/products/${id}`),
   setRelations: (id: string, relations: Body[]) => apiPut<ProductDetail>(`/inventory/products/${id}/relations`, { relations }),
+  setProductImage: (id: string, file: File) => apiUpload<ProductDetail>(`/inventory/products/${id}/image`, file),
+  removeProductImage: (id: string) => apiDelete<ProductDetail>(`/inventory/products/${id}/image`),
   searchProducts: (search: string, stockable?: boolean, filter?: "purchased" | "sold" | "manufactured") =>
     apiGet<ProductOption[]>("/lookups/products", {
       search,

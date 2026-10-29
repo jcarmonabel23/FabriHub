@@ -60,11 +60,11 @@ export const orderBody = z.object({
   notes: z.string().trim().max(800).nullish(),
   lines: z.array(lineSchema).min(1, "Agregue al menos una línea").max(200)
 });
-type OrderInput = z.infer<typeof orderBody>;
+export type OrderInput = z.infer<typeof orderBody>;
 
 // ------------------------------------------------------------------ Cálculo
 
-interface BuiltLine {
+export interface BuiltLine {
   productId: string;
   unitId: string;
   unitFactor: number;
@@ -79,7 +79,7 @@ interface BuiltLine {
   notes: string | null;
 }
 
-interface BuiltOrder {
+export interface BuiltOrder {
   header: OrderInput & {
     currencyId: string;
     exchangeRate: number;
@@ -106,7 +106,15 @@ interface ProductRow {
   sale_price: string | null;
 }
 
-export async function buildOrder(db: Db | pg.PoolClient, input: OrderInput): Promise<BuiltOrder> {
+/** Variantes del cálculo para otros documentos (POS): la lista de precios de la caja y sin retenciones */
+export interface BuildOptions {
+  /** Lista de precios que manda sobre la del cliente */
+  priceListId?: string | null;
+  /** Fuerza (o anula) las retenciones; por defecto, según el cliente sea agente de retención */
+  applyWithholdings?: boolean;
+}
+
+export async function buildOrder(db: Db | pg.PoolClient, input: OrderInput, opts: BuildOptions = {}): Promise<BuiltOrder> {
   const customer = await one<{
     is_active: boolean;
     currency_id: string | null;
@@ -128,7 +136,7 @@ export async function buildOrder(db: Db | pg.PoolClient, input: OrderInput): Pro
   if (!customer) throw badRequest("INVALID_CUSTOMER", "Cliente inexistente");
   if (!customer.is_active) throw badRequest("INACTIVE_CUSTOMER", "El cliente está inactivo");
 
-  const base = await one<{ id: string }>(`SELECT base_currency_id AS id FROM company WHERE id = 1`, [], db);
+  const base = await one<{ id: string }>(`SELECT base_currency_id AS id FROM companies WHERE id = fn_current_company()`, [], db);
   const currencyId = input.currencyId ?? customer.currency_id ?? base!.id;
   const rate = await exchangeRate(db, currencyId, input.orderDate);
 
@@ -169,7 +177,7 @@ export async function buildOrder(db: Db | pg.PoolClient, input: OrderInput): Pro
     let priceSource: string | null = l.unitPrice !== null && l.unitPrice !== undefined ? "manual" : null;
     if (unitPrice === null) {
       const s = await suggestPrice(db, {
-        priceListId: customer.price_list_id,
+        priceListId: opts.priceListId ?? customer.price_list_id,
         productId: p.id,
         date: input.orderDate,
         currencyId,
@@ -181,7 +189,7 @@ export async function buildOrder(db: Db | pg.PoolClient, input: OrderInput): Pro
     }
 
     const product = p.fiscal_treatment_id ? treatments.get(p.fiscal_treatment_id) ?? null : null;
-    const r = resolveTreatment(product, party, customer.is_withholding_agent);
+    const r = resolveTreatment(product, party, opts.applyWithholdings ?? customer.is_withholding_agent);
     resolved.push(r);
     lines.push({
       productId: p.id,
@@ -431,7 +439,7 @@ export async function orderDetail(id: string, db?: Db) {
   return { ...header, lines, deliveries };
 }
 
-async function assertOwner(req: Request, id: string) {
+export async function assertOwner(req: Request, id: string) {
   const owner = ownerScope(req);
   if (!owner) return;
   const so = await one<{ created_by: string | null }>(`SELECT created_by FROM sales_orders WHERE id = $1`, [id]);

@@ -15,7 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "@atoms/tables/DataTable";
 import FormModal from "@atoms/forms/FormModal";
-import { useCan } from "@modules/access-control/useCan";
+import { useCanGlobal } from "@modules/access-control/useCan";
 import { confirmDelete } from "@utils/confirm";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { settingsApi } from "../../services/settings.service";
@@ -70,7 +70,7 @@ function FieldInput({
 
 export default function CatalogTab({ ui, onRates }: Readonly<{ ui: CatalogUi; onRates?: (c: CatalogItem) => void }>) {
   const qc = useQueryClient();
-  const can = useCan(ui.module);
+  const can = useCanGlobal(ui.module, ui.global);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<CatalogItem | null>(null);
   const [open, setOpen] = useState(false);

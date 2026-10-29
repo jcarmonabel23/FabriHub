@@ -13,6 +13,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import type { ColumnDef } from "@tanstack/react-table";
 import dayjs from "dayjs";
 import { useNavigate } from "react-router-dom";
+import PdfButton from "@atoms/actions/PdfButton";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import { coreAuth } from "@auth/store/coreAuth";
@@ -101,6 +102,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
           </div>
 
           <Group gap="xs">
+            <PdfButton path={`/sales/orders/${o.id}/pdf`} />
             {st === "draft" && can("edit") && (
               <>
                 <Button size="xs" variant="light" leftSection={<IconPencil size={14} />} onClick={() => onEdit(o)}>Editar</Button>

@@ -16,7 +16,7 @@ export async function exchangeRate(db: Db, currencyId: string, date: string): Pr
     `SELECT (c.id = co.base_currency_id) AS is_base, c.code,
             (SELECT r.rate FROM currencies_rates r WHERE r.currency_id = c.id AND r.rate_date <= $2::date
               ORDER BY r.rate_date DESC LIMIT 1) AS rate
-       FROM catalogs_currencies c CROSS JOIN company co WHERE c.id = $1 AND co.id = 1`,
+       FROM catalogs_currencies c CROSS JOIN companies co WHERE c.id = $1 AND co.id = fn_current_company()`,
     [currencyId, date],
     db
   );
@@ -32,7 +32,7 @@ export async function exchangeRate(db: Db, currencyId: string, date: string): Pr
 export async function appliesWithholdings(db: Db): Promise<boolean> {
   const row = await one<{ ok: boolean }>(
     `SELECT (co.is_withholding_agent AND COALESCE((fn_parameter('TAXES', 'apply_withholdings'))::text::boolean, FALSE)) AS ok
-       FROM company co WHERE co.id = 1`,
+       FROM companies co WHERE co.id = fn_current_company()`,
     [],
     db
   );

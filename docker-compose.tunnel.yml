@@ -1,0 +1,37 @@
+# =====================================================================
+#  FabriHub · override de PUBLICACIÓN desde el PC con Cloudflare Tunnel
+#
+#    docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --env-file .env.production up -d --build
+#    docker logs fabrihub-tunnel        -> buscar la URL https://<algo>.trycloudflare.com
+#
+#  Alternativa gratis a un VPS: no abre puertos en el router ni necesita IP pública.
+#  Cloudflare pone el HTTPS. La app solo está en línea mientras el PC esté encendido.
+#  Túnel rápido (sin cuenta): la URL cambia cada vez que se reinicia el contenedor del túnel.
+#
+#  Cambios respecto al de desarrollo:
+#   · cloudflared delante del front (red interna); no se publica nada nuevo.
+#   · Mailpit no se levanta (perfil dev): el correo sale por el proveedor SMTP real.
+#   · La API confía en 2 proxies (cloudflared + front) para ver la IP real del cliente.
+# =====================================================================
+
+services:
+  tunnel:
+    restart: unless-stopped
+    image: cloudflare/cloudflared:2024.12.2
+    container_name: fabrihub-tunnel
+    security_opt: ["no-new-privileges:true"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    # http2 (TCP 443) en vez de QUIC (UDP): más estable en redes domésticas que filtran UDP
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "--url", "http://front:3005"]
+    depends_on:
+      front: { condition: service_healthy }
+    networks: [red_app]
+
+  api:
+    environment:
+      TRUST_PROXY: 2
+
+  mailpit:
+    profiles: ["dev"]

@@ -12,20 +12,29 @@
  *
  * Protecciones anti-bloqueo: nadie puede desactivarse a sí mismo ni quitarse su propio
  * acceso de configuración a ADM_USERS.
+ *
+ * Multiempresa: solo se ven y administran los usuarios que pertenecen a la empresa activa;
+ * dar de alta un correo que ya existe lo agrega a esta empresa; retirarlo no borra la cuenta.
  */
 
 import { z } from "zod";
 import { one, query, withTx } from "../../db.js";
 import { logAuth } from "../../lib/authLog.js";
 import { temporaryPassword } from "../../lib/crypto.js";
-import { badRequest, conflict, forbidden, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
+import { badRequest, forbidden, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
 import { sendTemporaryPassword } from "../../lib/mailer.js";
-import { hashPassword, setPassword } from "../../lib/passwords.js";
+import { setPassword } from "../../lib/passwords.js";
 import { authOf, txCtx } from "../../security/context.js";
 import { revokeAllSessions } from "../auth/service.js";
+import { addMember, removeMember } from "./members.js";
+import { companyBranding } from "../settings/branding.js";
 
 const MODULE = "ADM_USERS";
 export { MODULE as USERS_MODULE };
+
+/** Condición SQL: el usuario `ref` pertenece a la empresa activa */
+const memberOf = (ref: string) =>
+  `EXISTS (SELECT 1 FROM users_companies uc WHERE uc.user_id = ${ref} AND uc.company_id = fn_current_company())`;
 
 // ------------------------------------------------------------------ Listado
 
@@ -43,7 +52,8 @@ export const listUsers = handler({ query: listQuery }, async ({ query: q }) => {
               WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > NOW()) AS "activeSessions",
             COUNT(*) OVER()::int AS total
        FROM users u
-      WHERE ($1::text IS NULL OR u.email ILIKE '%' || $1 || '%' OR u.names ILIKE '%' || $1 || '%')
+      WHERE ${memberOf("u.id")}
+        AND ($1::text IS NULL OR u.email ILIKE '%' || $1 || '%' OR u.names ILIKE '%' || $1 || '%')
         AND (
               $2::text IS NULL
            OR ($2 = 'active'   AND u.is_active)
@@ -66,7 +76,7 @@ async function userDetail(id: string) {
     `SELECT id, email, names, is_active AS "isActive", must_change_password AS "mustChangePassword",
             locked_until AS "lockedUntil", failed_attempts AS "failedAttempts", last_login_at AS "lastLoginAt",
             logins, password_changed_at AS "passwordChangedAt", created_at AS "createdAt", updated_at AS "updatedAt"
-       FROM users WHERE id = $1`,
+       FROM users WHERE id = $1 AND ${memberOf("users.id")}`,
     [id]
   );
   if (!user) throw notFound("Usuario no encontrado");
@@ -98,9 +108,9 @@ export const userLookups = handler({}, async () => {
       `SELECT id, slug, name, description, permissions FROM catalogs_roles WHERE is_active ORDER BY order_list, name`
     ),
     query(
-      `SELECT m.code, m.name, m.is_offline AS "isOffline", p.code AS "parentCode", p.name AS "parentName"
+      `SELECT m.code, m.name, m.is_offline AS "isOffline", m.scope, p.code AS "parentCode", p.name AS "parentName"
          FROM catalogs_modules m JOIN catalogs_modules p ON p.id = m.module_parent_id
-        WHERE m.is_active
+        WHERE m.is_active AND m.scope <> 'platform'
         ORDER BY p.order_list, m.order_list`
     ),
     query(`SELECT slug, name, description FROM catalogs_permissions WHERE is_active ORDER BY order_list`)
@@ -115,23 +125,29 @@ const createBody = z.object({
   names: z.string().trim().min(3).max(120)
 });
 
+/**
+ * Alta en la empresa activa. Si el correo ya existe (es usuario de otra empresa), se agrega a esta
+ * sin tocar su contraseña ni sus datos: `addedExisting` lo indica al front.
+ */
 export const createUser = handler({ body: createBody }, async ({ body, req }) => {
-  const exists = await one(`SELECT 1 FROM users WHERE email = $1`, [body.email]);
-  if (exists) throw conflict("EMAIL_TAKEN", "Ya existe un usuario con ese correo");
-
-  const temp = temporaryPassword();
-  const hash = await hashPassword(temp);
-  const created = await withTx(txCtx(req), (client) =>
-    one<{ id: string }>(
-      `INSERT INTO users (email, names, password_hash, must_change_password, created_by, updated_by)
-       VALUES ($1, $2, $3, TRUE, fn_current_app_user(), fn_current_app_user()) RETURNING id`,
-      [body.email, body.names, hash],
-      client
-    )
-  );
-  await sendTemporaryPassword(body.email, body.names, temp);
+  const added = await withTx(txCtx(req), (client) => addMember(client, { email: body.email, names: body.names }));
+  if (added.tempPassword) {
+    await sendTemporaryPassword(added.email, added.names, added.tempPassword, await companyBranding(authOf(req).companyId));
+  }
   req.res?.status(201);
-  return userDetail(created!.id);
+  return { ...(await userDetail(added.userId)), addedExisting: added.tempPassword === null };
+});
+
+/** Retira al usuario de la empresa activa (no borra la cuenta: puede pertenecer a otras) */
+export const removeUserFromCompany = handler({ params: idParams }, async ({ params, req }) => {
+  if (params.id === authOf(req).userId) throw forbidden("SELF_LOCKOUT", "No puede retirarse a sí mismo de la empresa");
+  const target = await one<{ is_platform_admin: boolean }>(`SELECT is_platform_admin FROM users WHERE id = $1`, [params.id]);
+  if (target?.is_platform_admin && !authOf(req).isPlatformAdmin) {
+    throw forbidden("PLATFORM_ADMIN", "Un administrador de la plataforma solo lo retira otro administrador de la plataforma");
+  }
+  const removed = await withTx(txCtx(req), (client) => removeMember(client, params.id));
+  if (!removed) throw notFound("Usuario no encontrado");
+  return undefined;
 });
 
 // ------------------------------------------------------------------ Edición
@@ -152,7 +168,7 @@ export const updateUser = handler({ params: idParams, body: updateBody }, async 
     const updated = await one(
       `UPDATE users SET names = COALESCE($2, names), is_active = COALESCE($3, is_active),
               updated_by = fn_current_app_user()
-        WHERE id = $1 RETURNING id`,
+        WHERE id = $1 AND ${memberOf("users.id")} RETURNING id`,
       [params.id, body.names ?? null, body.isActive ?? null],
       client
     );
@@ -168,7 +184,7 @@ export const unlockUser = handler({ params: idParams }, async ({ params, req }) 
   await withTx(txCtx(req), async (client) => {
     const row = await one(
       `UPDATE users SET locked_until = NULL, failed_attempts = 0, updated_by = fn_current_app_user()
-        WHERE id = $1 RETURNING id`,
+        WHERE id = $1 AND ${memberOf("users.id")} RETURNING id`,
       [params.id],
       client
     );
@@ -184,7 +200,7 @@ export const adminResetPassword = handler({ params: idParams }, async ({ params,
     throw badRequest("USE_CHANGE_PASSWORD", "Para su propia cuenta use Cambiar contraseña");
   }
   const user = await one<{ email: string; names: string; password_hash: string }>(
-    `SELECT email, names, password_hash FROM users WHERE id = $1`,
+    `SELECT email, names, password_hash FROM users WHERE id = $1 AND ${memberOf("users.id")}`,
     [params.id]
   );
   if (!user) throw notFound("Usuario no encontrado");
@@ -194,7 +210,7 @@ export const adminResetPassword = handler({ params: idParams }, async ({ params,
     await setPassword(client, params.id, user.password_hash, temp, true);
     await revokeAllSessions(client, params.id, "admin");
   });
-  await sendTemporaryPassword(user.email, user.names, temp);
+  await sendTemporaryPassword(user.email, user.names, temp, await companyBranding(auth.companyId));
   await logAuth(req, "admin_reset", true, { userId: params.id, email: user.email, detail: { by: auth.userId } });
   return { message: `Se envió una contraseña temporal a ${user.email}` };
 });
@@ -204,14 +220,19 @@ export const listSessions = handler({ params: idParams }, ({ params }) =>
     `SELECT id, ip_address AS "ipAddress", user_agent AS "userAgent", created_at AS "createdAt",
             last_used_at AS "lastUsedAt", expires_at AS "expiresAt", revoked_at AS "revokedAt",
             revoke_reason AS "revokeReason", rotations
-       FROM users_sessions WHERE user_id = $1
+       FROM users_sessions WHERE user_id = $1 AND ${memberOf("users_sessions.user_id")}
       ORDER BY created_at DESC LIMIT 50`,
     [params.id]
   )
 );
 
 export const revokeSessions = handler({ params: idParams }, async ({ params, req }) => {
-  await withTx(txCtx(req), (client) => revokeAllSessions(client, params.id, "admin"));
+  await withTx(txCtx(req), async (client) => {
+    if (!(await one(`SELECT 1 FROM users WHERE id = $1 AND ${memberOf("users.id")}`, [params.id], client))) {
+      throw notFound("Usuario no encontrado");
+    }
+    await revokeAllSessions(client, params.id, "admin");
+  });
   await logAuth(req, "admin_revoke_sessions", true, { userId: params.id, detail: { by: authOf(req).userId } });
   return undefined;
 });
@@ -263,7 +284,7 @@ export const setUserModules = handler({ params: idParams, body: assignmentsBody 
   }
 
   await withTx(txCtx(req), async (client) => {
-    const target = await one(`SELECT 1 FROM users WHERE id = $1`, [params.id], client);
+    const target = await one(`SELECT 1 FROM users WHERE id = $1 AND ${memberOf("users.id")}`, [params.id], client);
     if (!target) throw notFound("Usuario no encontrado");
 
     await client.query(
@@ -274,7 +295,7 @@ export const setUserModules = handler({ params: idParams, body: assignmentsBody 
       await client.query(
         `INSERT INTO users_modules (user_id, module_id, role_ids, permissions, created_by, updated_by)
          VALUES ($1, $2, $3, $4, fn_current_app_user(), fn_current_app_user())
-         ON CONFLICT (user_id, module_id) DO UPDATE
+         ON CONFLICT (company_id, user_id, module_id) DO UPDATE
             SET role_ids = EXCLUDED.role_ids, permissions = EXCLUDED.permissions,
                 is_active = TRUE, updated_by = fn_current_app_user()`,
         [params.id, moduleId.get(a.moduleCode), JSON.stringify(a.roleIds), JSON.stringify(a.permissions)]
@@ -292,7 +313,9 @@ export const setUserWarehouses = handler(
   async ({ params, body, req }) => {
     const ids = [...new Set(body.warehouseIds)];
     await withTx(txCtx(req), async (client) => {
-      if (!(await one(`SELECT 1 FROM users WHERE id = $1`, [params.id], client))) throw notFound("Usuario no encontrado");
+      if (!(await one(`SELECT 1 FROM users WHERE id = $1 AND ${memberOf("users.id")}`, [params.id], client))) {
+        throw notFound("Usuario no encontrado");
+      }
       const valid = await query<{ id: string }>(`SELECT id FROM warehouses WHERE id = ANY($1)`, [ids], client);
       if (valid.length !== ids.length) throw badRequest("INVALID_WAREHOUSE", "Algún almacén no existe");
       await client.query(

@@ -84,7 +84,7 @@ export const listDeliveries = handler({ query: listQuery }, async ({ query: q, r
   return { items: rows.map(({ total_rows: _t, ...r }) => r), total, page: q.page, pageSize: q.pageSize };
 });
 
-async function deliveryDetail(id: string, scope: string[] | null) {
+export async function deliveryDetail(id: string, scope: string[] | null) {
   const header = await one<{ warehouseId: string }>(`${HEADER} WHERE n.id = $1`, [id]);
   if (!header || (scope && !scope.includes(header.warehouseId))) throw notFound("Nota de entrega no encontrada");
   const lines = await query(

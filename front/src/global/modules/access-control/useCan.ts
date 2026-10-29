@@ -24,6 +24,22 @@ export function useCan(code: string): (slug: string) => boolean {
   return useCallback((slug: string) => canSlug(modules.find((m) => m.code === code), slug), [modules, code]);
 }
 
+/** Permisos que conserva un usuario que no es de plataforma sobre datos globales (espejo de la API) */
+const READ_ONLY_SLUGS = ["access", "view", "view_all", "download"];
+
+/**
+ * @function useCanGlobal
+ * @description Como useCan, para catálogos compartidos entre empresas: fuera de la plataforma solo lectura.
+ */
+export function useCanGlobal(code: string, global: boolean | undefined): (slug: string) => boolean {
+  const can = useCan(code);
+  const isPlatformAdmin = coreAuth((s) => Boolean(s.user?.isPlatformAdmin));
+  return useCallback(
+    (slug: string) => can(slug) && (!global || isPlatformAdmin || READ_ONLY_SLUGS.includes(slug)),
+    [can, global, isPlatformAdmin]
+  );
+}
+
 export interface ModuleStatus {
   exists: boolean;
   offline: boolean;

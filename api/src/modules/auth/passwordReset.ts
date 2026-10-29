@@ -15,6 +15,7 @@ import { sendOtp } from "../../lib/mailer.js";
 import { assertNotReused, assertPasswordPolicy, setPassword } from "../../lib/passwords.js";
 import { txCtx } from "../../security/context.js";
 import { checkOtp, createOtp, revokeAllSessions, type OtpRow } from "./service.js";
+import { brandingForUser } from "../settings/branding.js";
 
 const email = z.email().max(200).transform((v) => v.trim().toLowerCase());
 
@@ -35,7 +36,7 @@ export const forgotPassword = handler({ body: z.object({ email }) }, async ({ bo
 
   if (user && !user.recent) {
     const otp = await withTx(txCtx(req), (client) => createOtp(client, req, user.id, "password_reset"));
-    await sendOtp(user.email, otp.code, "password_reset");
+    await sendOtp(user.email, otp.code, "password_reset", await brandingForUser(user.id));
   }
   await logAuth(req, "password_forgot", Boolean(user), { userId: user?.id, email: body.email });
   return GENERIC;

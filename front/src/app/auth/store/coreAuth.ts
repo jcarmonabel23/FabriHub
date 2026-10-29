@@ -8,12 +8,14 @@
  *   cerrar la pestaña desaparece. Al recargar, `restoring` pide uno nuevo con la cookie httpOnly.
  * - Se persiste cifrado lo necesario para pintar la UI sin parpadeo: perfil y módulos.
  * - `challenge` guarda el desafío OTP entre la pantalla de login y la de verificación.
+ * - `company` es la empresa activa: el apiClient la envía en x-company-id para detectar que otra
+ *   pestaña cambió de empresa (409 COMPANY_CHANGED → recarga).
  */
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { secureStorage } from "@store/Storage";
-import type { OtpChallenge, SessionModule, SessionPayload, SessionUser, TokenPayload } from "../types";
+import type { OtpChallenge, SessionCompany, SessionModule, SessionPayload, SessionUser, TokenPayload } from "../types";
 
 export type SessionStatus = "anonymous" | "restoring" | "authenticated";
 
@@ -23,6 +25,7 @@ interface AuthState {
   accessToken: string | null;
   accessExpiresAt: number | null;
   user: SessionUser | null;
+  company: SessionCompany | null;
   modules: SessionModule[];
   environment: string;
   idleMinutes: number;
@@ -41,6 +44,7 @@ const empty = {
   accessToken: null,
   accessExpiresAt: null,
   user: null,
+  company: null,
   modules: [],
   environment: "dev",
   idleMinutes: 30,
@@ -59,13 +63,15 @@ export const coreAuth = create<AuthState>()(
           accessToken: p.accessToken,
           accessExpiresAt: p.accessExpiresAt,
           user: p.user,
+          company: p.company,
           modules: p.modules,
           environment: p.environment,
           idleMinutes: p.idleMinutes,
           challenge: null
         }),
 
-      setSession: (p) => set({ user: p.user, modules: p.modules, environment: p.environment, idleMinutes: p.idleMinutes }),
+      setSession: (p) =>
+        set({ user: p.user, company: p.company, modules: p.modules, environment: p.environment, idleMinutes: p.idleMinutes }),
 
       setChallenge: (challenge) => set({ challenge }),
 
@@ -79,6 +85,7 @@ export const coreAuth = create<AuthState>()(
       partialize: (s) => ({
         isAuthenticated: s.isAuthenticated,
         user: s.user,
+        company: s.company,
         modules: s.modules,
         environment: s.environment,
         idleMinutes: s.idleMinutes

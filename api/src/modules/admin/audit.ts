@@ -2,13 +2,30 @@
  * @project FabriHub - API
  * @file src/modules/admin/audit.ts
  * @description Consulta de auditoría de datos y de accesos (módulo ADM_AUDIT, solo lectura)
+ *
+ * @overview
+ * Las bitácoras son globales; se muestran solo las de la empresa activa: sus registros, y en
+ * tablas globales (usuarios, roles…) los cambios y accesos de los usuarios que pertenecen a ella.
+ * Un administrador de plataforma ve las bitácoras completas.
  */
 
+import type { Request } from "express";
 import { z } from "zod";
 import { query } from "../../db.js";
 import { handler, pageQuery } from "../../lib/http.js";
+import { authOf } from "../../security/context.js";
 
 export const AUDIT_MODULE = "ADM_AUDIT";
+
+/** Condición SQL: el usuario `ref` pertenece a la empresa activa */
+const memberOf = (ref: string) =>
+  `EXISTS (SELECT 1 FROM users_companies uc WHERE uc.user_id = ${ref} AND uc.company_id = fn_current_company())`;
+
+/** Registros de auditoría visibles en la empresa activa (todos, para un administrador de plataforma) */
+const auditVisible = (req: Request) =>
+  authOf(req).isPlatformAdmin
+    ? "TRUE"
+    : `(a.company_id = fn_current_company() OR (a.company_id IS NULL AND ${memberOf("a.user_id")}))`;
 
 const range = {
   from: z.coerce.date().optional(),
@@ -23,7 +40,7 @@ const dataQuery = pageQuery.extend({
   ...range
 });
 
-export const listDataAudit = handler({ query: dataQuery }, async ({ query: q }) => {
+export const listDataAudit = handler({ query: dataQuery }, async ({ query: q, req }) => {
   const rows = await query(
     `SELECT a.id, a.table_name AS "tableName", a.record_id AS "recordId", a.action,
             a.old_data AS "oldData", a.new_data AS "newData", a.changed_fields AS "changedFields",
@@ -31,7 +48,8 @@ export const listDataAudit = handler({ query: dataQuery }, async ({ query: q }) 
             a.user_id AS "userId", u.names AS "userNames", u.email AS "userEmail",
             COUNT(*) OVER()::int AS total
        FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
-      WHERE ($1::text IS NULL OR a.table_name = $1)
+      WHERE ${auditVisible(req)}
+        AND ($1::text IS NULL OR a.table_name = $1)
         AND ($2::uuid IS NULL OR a.user_id = $2)
         AND ($3::text IS NULL OR a.record_id = $3)
         AND ($4::text IS NULL OR a.action = $4)
@@ -45,8 +63,10 @@ export const listDataAudit = handler({ query: dataQuery }, async ({ query: q }) 
   return { items: rows.map(({ total: _t, ...r }) => r), total, page: q.page, pageSize: q.pageSize };
 });
 
-export const listAuditTables = handler({}, async () =>
-  (await query<{ t: string }>(`SELECT DISTINCT table_name AS t FROM audit_log ORDER BY 1`)).map((r) => r.t)
+export const listAuditTables = handler({}, async ({ req }) =>
+  (await query<{ t: string }>(`SELECT DISTINCT table_name AS t FROM audit_log a WHERE ${auditVisible(req)} ORDER BY 1`)).map(
+    (r) => r.t
+  )
 );
 
 const authQuery = pageQuery.extend({
@@ -56,13 +76,14 @@ const authQuery = pageQuery.extend({
   ...range
 });
 
-export const listAuthAudit = handler({ query: authQuery }, async ({ query: q }) => {
+export const listAuthAudit = handler({ query: authQuery }, async ({ query: q, req }) => {
   const rows = await query(
     `SELECT h.id, h.user_id AS "userId", h.email, h.event_type AS "eventType", h.success, h.detail,
             h.trace_id AS "traceId", h.ip_address AS "ipAddress", h.user_agent AS "userAgent",
             h.created_at AS "createdAt", COUNT(*) OVER()::int AS total
        FROM users_auth_history h
-      WHERE ($1::text IS NULL OR h.email::text ILIKE '%' || $1 || '%')
+      WHERE ${authOf(req).isPlatformAdmin ? "TRUE" : memberOf("h.user_id")}
+        AND ($1::text IS NULL OR h.email::text ILIKE '%' || $1 || '%')
         AND ($2::text IS NULL OR h.event_type = $2)
         AND ($3::boolean IS NULL OR h.success = $3)
         AND ($4::timestamptz IS NULL OR h.created_at >= $4)

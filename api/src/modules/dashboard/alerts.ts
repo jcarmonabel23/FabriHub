@@ -14,16 +14,20 @@
  *     no una por corrida.
  *  3. Solo las alertas NUEVAS generan notificaciones, para cada usuario que puede verlas
  *     (`alertVisibleTo`), y un correo de resumen por destinatario (DASHBOARD.alerts_email).
- * Un candado de transacción (pg_try_advisory_xact_lock) impide dos corridas a la vez.
+ * Un candado de transacción (pg_try_advisory_xact_lock) impide dos corridas a la vez en una empresa.
+ *
+ * Multiempresa: cada corrida trabaja en la empresa activa (RLS). El job periódico recorre las
+ * empresas activas y corre cada una según SU parámetro alerts_interval_minutes.
  */
 
 import { z } from "zod";
-import { one, pool, query, withTx } from "../../db.js";
+import { currentCompanyId, one, query, runInCompany, withTx } from "../../db.js";
 import { conflict, handler, pageQuery } from "../../lib/http.js";
 import { logger } from "../../lib/logger.js";
 import { sendAlertDigest } from "../../lib/mailer.js";
 import { authOf } from "../../security/context.js";
 import { alertVisibleTo } from "./access.js";
+import { companyBranding } from "../settings/branding.js";
 
 export const ALERT_KINDS = ["STOCK_MIN", "STOCK_MAX", "LOT_EXPIRING", "LOT_EXPIRED", "QC_PENDING", "PO_OVERDUE", "PRO_LATE", "SO_LATE"] as const;
 type Kind = (typeof ALERT_KINDS)[number];
@@ -227,7 +231,10 @@ export async function runAlerts(trigger: "schedule" | "manual", runBy: string | 
   try {
     const candidates = await detect();
     const result = await withTx({ userId: runBy, traceId: null }, async (client) => {
-      const lock = await client.query<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock($1) AS ok`, [LOCK_KEY]);
+      const lock = await client.query<{ ok: boolean }>(
+        `SELECT pg_try_advisory_xact_lock($1, hashtext(fn_current_company()::text)) AS ok`,
+        [LOCK_KEY]
+      );
       if (!lock.rows[0].ok) return null;
 
       const sync = await client.query<{ new_ids: string[] | null; resolved: number; open: number }>(
@@ -275,7 +282,7 @@ export async function runAlerts(trigger: "schedule" | "manual", runBy: string | 
     });
 
     if (!result) {
-      await pool.query(`UPDATE alerts_runs SET finished_at = NOW(), error = 'Otra corrida estaba en curso' WHERE id = $1`, [run.id]);
+      await query(`UPDATE alerts_runs SET finished_at = NOW(), error = 'Otra corrida estaba en curso' WHERE id = $1`, [run.id]);
       throw conflict("ALERTS_RUNNING", "Ya hay una revisión de alertas en curso; intente en unos segundos");
     }
 
@@ -288,15 +295,16 @@ export async function runAlerts(trigger: "schedule" | "manual", runBy: string | 
       notifications: result.notificationIds.length,
       emails
     };
-    await pool.query(
+    await query(
       `UPDATE alerts_runs SET finished_at = NOW(), open_alerts = $2, new_alerts = $3, resolved_alerts = $4, notifications = $5, emails = $6 WHERE id = $1`,
       [run.id, summary.openAlerts, summary.newAlerts, summary.resolvedAlerts, summary.notifications, summary.emails]
     );
     return summary;
   } catch (err) {
-    await pool
-      .query(`UPDATE alerts_runs SET finished_at = NOW(), error = COALESCE(error, $2) WHERE id = $1`, [run.id, String((err as Error).message ?? err).slice(0, 800)])
-      .catch(() => undefined);
+    await query(`UPDATE alerts_runs SET finished_at = NOW(), error = COALESCE(error, $2) WHERE id = $1`, [
+      run.id,
+      String((err as Error).message ?? err).slice(0, 800)
+    ]).catch(() => undefined);
     throw err;
   }
 }
@@ -314,12 +322,14 @@ async function emailDigests(notificationIds: string[]): Promise<number> {
       GROUP BY u.id, u.email, u.names`,
     [notificationIds]
   );
+  const companyId = currentCompanyId();
+  const brand = companyId ? await companyBranding(companyId) : null;
   let sent = 0;
   for (const g of groups) {
     const items = [...g.items].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-    if (await sendAlertDigest(g.email, g.names, items)) {
+    if (await sendAlertDigest(g.email, g.names, items, brand)) {
       sent++;
-      await pool.query(`UPDATE notifications SET emailed_at = NOW() WHERE id = ANY($1)`, [items.map((i) => i.id)]);
+      await query(`UPDATE notifications SET emailed_at = NOW() WHERE id = ANY($1)`, [items.map((i) => i.id)]);
     }
   }
   return sent;
@@ -329,22 +339,39 @@ async function emailDigests(notificationIds: string[]): Promise<number> {
 
 let timer: NodeJS.Timeout | null = null;
 
-/** Programa el detector: primera corrida al minuto del arranque, luego cada alerts_interval_minutes */
+/** Revisión del job: cada empresa corre cuando pasó su alerts_interval_minutes (mínimo 5) */
+const SCHEDULER_TICK_MS = 5 * 60_000;
+
+/** Corrida programada de la empresa activa, si está habilitada y ya le toca */
+async function scheduledRunIfDue(companyId: string): Promise<void> {
+  try {
+    if (!(await param("alerts_enabled", true))) return;
+    const minutes = Math.max(5, Number(await param("alerts_interval_minutes", 60)) || 60);
+    const last = await one<{ due: boolean }>(
+      `SELECT COALESCE(MAX(started_at) < NOW() - make_interval(mins => $1) + INTERVAL '30 seconds', TRUE) AS due
+         FROM alerts_runs WHERE trigger = 'schedule'`,
+      [minutes]
+    );
+    if (!last?.due) return;
+    const s = await runAlerts("schedule");
+    logger.info({ companyId, ...s }, "[alerts] corrida programada");
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "ALERTS_RUNNING") logger.info({ companyId }, "[alerts] corrida programada omitida: otra en curso");
+    else logger.error({ err, companyId }, "[alerts] la corrida programada falló");
+  }
+}
+
+/** Programa el detector: primera revisión al minuto del arranque, luego cada 5 minutos por empresa */
 export function startAlertScheduler(firstDelayMs = 60_000): void {
   const tick = async () => {
-    let minutes = 60;
     try {
-      minutes = Number(await param("alerts_interval_minutes", 60)) || 60;
-      if (await param("alerts_enabled", true)) {
-        const s = await runAlerts("schedule");
-        logger.info(s, "[alerts] corrida programada");
-      }
+      const companies = await query<{ id: string }>(`SELECT id FROM companies WHERE is_active ORDER BY code`);
+      for (const c of companies) await runInCompany(c.id, () => scheduledRunIfDue(c.id));
     } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code === "ALERTS_RUNNING") logger.info("[alerts] corrida programada omitida: otra en curso");
-      else logger.error({ err }, "[alerts] la corrida programada falló");
+      logger.error({ err }, "[alerts] no se pudieron recorrer las empresas");
     } finally {
-      timer = setTimeout(tick, Math.max(5, minutes) * 60_000);
+      timer = setTimeout(tick, SCHEDULER_TICK_MS);
       timer.unref();
     }
   };

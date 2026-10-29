@@ -19,6 +19,7 @@ import { sendOtp } from "../../lib/mailer.js";
 import { verifyPassword } from "../../lib/passwords.js";
 import { txCtx } from "../../security/context.js";
 import { USER_COLUMNS, createOtp, maskEmail, type UserRow } from "./service.js";
+import { brandingForUser } from "../settings/branding.js";
 
 const body = z.object({
   email: z.email().max(200).transform((v) => v.trim().toLowerCase()),
@@ -70,7 +71,7 @@ export const signIn = handler({ body }, async ({ body, req }) => {
     return createOtp(client, req, user.id, "login");
   });
 
-  await sendOtp(user.email, otp.code, "login");
+  await sendOtp(user.email, otp.code, "login", await brandingForUser(user.id));
   await logAuth(req, "sign_in", true, { userId: user.id, email: body.email, detail: { step: "otp_sent" } });
 
   return {

@@ -18,6 +18,7 @@ import { useCan } from "@modules/access-control/useCan";
 import { confirmDelete } from "@utils/confirm";
 import { fmtMoney } from "@utils/format";
 import { notifyError, notifySuccess } from "@utils/notify";
+import { ImageThumb } from "@atoms/forms/ImageField";
 import ProductSelect from "../components/ProductSelect";
 import { INVENTORY_ACTIONS } from "../inventoryActions";
 import { inventoryApi } from "../services/inventory.service";
@@ -98,22 +99,33 @@ function ProductDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: (
         <Loader size="sm" />
       ) : (
         <Stack>
-          <div>
-            <Title order={4}>{p.code}</Title>
-            <Text>{p.name}</Text>
-            <Text size="sm" c="dimmed">
-              {p.typeName}
-              {p.familyName ? ` · ${p.familyName}` : ""}
-              {p.categoryName ? ` · ${p.categoryName}` : ""}
-            </Text>
-            <Group mt="xs">
-              <Flags p={p} />
-            </Group>
-          </div>
+          <Group align="flex-start" wrap="nowrap">
+            {p.image && (
+              <a href={p.image.full} target="_blank" rel="noreferrer" title="Ver imagen completa">
+                <ImageThumb url={p.image.medium} size={120} />
+              </a>
+            )}
+            <div>
+              <Title order={4}>{p.code}</Title>
+              <Text>{p.name}</Text>
+              <Text size="sm" c="dimmed">
+                {p.typeName}
+                {p.familyName ? ` · ${p.familyName}` : ""}
+                {p.categoryName ? ` · ${p.categoryName}` : ""}
+              </Text>
+              <Group mt="xs">
+                <Flags p={p} />
+              </Group>
+            </div>
+          </Group>
           <Table variant="vertical" withTableBorder fz="sm">
             <Table.Tbody>
               <Table.Tr>
-                <Table.Th w={190}>Unidad de almacén</Table.Th>
+                <Table.Th w={190}>Código de barras</Table.Th>
+                <Table.Td>{p.barcode ?? "—"}</Table.Td>
+              </Table.Tr>
+              <Table.Tr>
+                <Table.Th>Unidad de almacén</Table.Th>
                 <Table.Td>{p.stockUnitCode}</Table.Td>
               </Table.Tr>
               <Table.Tr>
@@ -220,14 +232,17 @@ export default function ProductsPage() {
       {
         header: "Producto",
         cell: ({ row: { original: p } }) => (
-          <div>
-            <Text size="sm" fw={700}>
-              {p.code}
-            </Text>
-            <Text size="xs" c="dimmed" lineClamp={1}>
-              {p.name}
-            </Text>
-          </div>
+          <Group gap="sm" wrap="nowrap">
+            <ImageThumb url={p.image?.thumb} />
+            <div>
+              <Text size="sm" fw={700}>
+                {p.code}
+              </Text>
+              <Text size="xs" c="dimmed" lineClamp={1}>
+                {p.name}
+              </Text>
+            </div>
+          </Group>
         )
       },
       { header: "Tipo", cell: ({ row: { original: p } }) => <Text size="sm">{p.typeName}</Text> },
@@ -286,7 +301,7 @@ export default function ProductsPage() {
       <ModuleHeader title="Productos" description="Maestro de productos: unidades, control por lote, precios y relaciones" actions={INVENTORY_ACTIONS} />
       <Group justify="space-between" mb="md">
         <Group gap="sm">
-          <TextInput placeholder="Código o nombre" leftSection={<IconSearch size={16} />} value={search} onChange={(e) => (setSearch(e.currentTarget.value), setPage(1))} w={260} />
+          <TextInput placeholder="Código, nombre o código de barras" leftSection={<IconSearch size={16} />} value={search} onChange={(e) => (setSearch(e.currentTarget.value), setPage(1))} w={260} />
           <Select
             placeholder="Todos los tipos"
             clearable

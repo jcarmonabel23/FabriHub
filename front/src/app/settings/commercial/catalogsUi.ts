@@ -36,6 +36,8 @@ export interface CatalogUi {
   codeHint: string;
   codeMaxLength: number;
   fields: FieldUi[];
+  /** Catálogo compartido por todas las empresas: fuera de la plataforma solo se consulta (espejo de global en la API) */
+  global?: boolean;
 }
 
 const appliesTo: FieldUi = {
@@ -95,6 +97,7 @@ export const COMMERCIAL_CATALOGS: CatalogUi[] = [
   {
     key: "currencies",
     module: "SET_COMMERCIAL",
+    global: true,
     label: "Monedas",
     singular: "moneda",
     feminine: true,
@@ -132,6 +135,7 @@ export const INVENTORY_CATALOGS: CatalogUi[] = [
   {
     key: "units",
     module: "INV_CATALOGS",
+    global: true,
     label: "Unidades",
     singular: "unidad",
     feminine: true,
@@ -142,6 +146,7 @@ export const INVENTORY_CATALOGS: CatalogUi[] = [
   {
     key: "product-types",
     module: "INV_CATALOGS",
+    global: true,
     label: "Tipos de producto",
     singular: "tipo de producto",
     feminine: false,
@@ -154,6 +159,7 @@ export const INVENTORY_CATALOGS: CatalogUi[] = [
   {
     key: "movement-concepts",
     module: "INV_CATALOGS",
+    global: true,
     label: "Conceptos de movimiento",
     singular: "concepto",
     feminine: false,

@@ -34,8 +34,14 @@ export default function UserFormModal({ opened, onClose, user }: Readonly<Props>
   const mutation = useMutation({
     mutationFn: () =>
       editing ? adminApi.updateUser(user!.id, { names }) : adminApi.createUser({ email: email.trim().toLowerCase(), names }),
-    onSuccess: () => {
-      notifySuccess(editing ? "Usuario actualizado" : `Usuario creado. Se envió la contraseña temporal a ${email}`);
+    onSuccess: (r) => {
+      notifySuccess(
+        editing
+          ? "Usuario actualizado"
+          : "addedExisting" in r && r.addedExisting
+            ? "El correo ya tenía cuenta en otra empresa: se agregó a esta con su contraseña actual. Asígnele sus módulos."
+            : `Usuario creado. Se envió la contraseña temporal a ${email}`
+      );
       qc.invalidateQueries({ queryKey: ["admin", "users"] });
       onClose();
     },

@@ -14,6 +14,7 @@ import { adminApi } from "@admin/services/admin.service";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { PERMISSION_LABEL } from "@admin/adminActions";
 import type { UserDetail } from "@admin/types";
+import { coreAuth } from "@auth/store/coreAuth";
 import { notifyError, notifySuccess } from "@utils/notify";
 
 interface Draft {
@@ -23,6 +24,7 @@ interface Draft {
 
 export default function AssignModulesModal({ user, onClose }: Readonly<{ user: UserDetail | null; onClose: () => void }>) {
   const qc = useQueryClient();
+  const isPlatformAdmin = coreAuth((s) => Boolean(s.user?.isPlatformAdmin));
   const lookups = useQuery({ queryKey: ["admin", "lookups"], queryFn: adminApi.lookups, enabled: Boolean(user) });
   const [draft, setDraft] = useState<Record<string, Draft>>({});
   const [warehouseIds, setWarehouseIds] = useState<string[]>([]);
@@ -112,6 +114,11 @@ export default function AssignModulesModal({ user, onClose }: Readonly<{ user: U
                               checked={Boolean(d)}
                               onChange={(e) => toggle(m.code, e.currentTarget.checked)}
                             />
+                            {m.scope === "global" && !isPlatformAdmin && (
+                              <Badge color="gray" variant="light" size="xs" title="Catálogo compartido por todas las empresas">
+                                Global · solo lectura
+                              </Badge>
+                            )}
                             {m.isOffline && (
                               <Badge color="gray" size="xs">
                                 Fuera de servicio

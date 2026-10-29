@@ -8,6 +8,7 @@ import { Router } from "express";
 import { authenticate } from "../../security/authenticate.js";
 import { authLimiter, refreshLimiter } from "../../security/rateLimits.js";
 import { changePassword } from "./changePassword.js";
+import { myCompanies, switchCompany } from "./companies.js";
 import { logout, logoutAll } from "./logout.js";
 import { me } from "./me.js";
 import { otpResend } from "./otpResend.js";
@@ -18,7 +19,10 @@ import { signIn } from "./signIn.js";
 
 export const authRoutes = Router();
 
-const pending = authenticate({ allowPendingPasswordChange: true });
+// /me y el cambio de contraseña devuelven la empresa vigente: el front se sincroniza (sin COMPANY_CHANGED)
+const pending = authenticate({ allowPendingPasswordChange: true, ignoreCompanyHeader: true });
+// Cambiar de empresa es justamente lo que provoca COMPANY_CHANGED: no se valida la cabecera
+const session = authenticate({ ignoreCompanyHeader: true });
 
 authRoutes.post("/sign-in", authLimiter, signIn);
 authRoutes.post("/otp/verify", authLimiter, otpVerify);
@@ -32,3 +36,5 @@ authRoutes.post("/logout-all", pending, logoutAll);
 
 authRoutes.get("/me", pending, me);
 authRoutes.post("/change-password", authLimiter, pending, changePassword);
+authRoutes.get("/companies", session, myCompanies);
+authRoutes.post("/switch-company", session, switchCompany);

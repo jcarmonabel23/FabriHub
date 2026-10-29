@@ -14,6 +14,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { query } from "../../db.js";
 import { handler } from "../../lib/http.js";
+import { imageUrls } from "../files/images.js";
 
 const SOURCES: Record<string, { sql: string; appliesTo?: boolean; orderBy?: string }> = {
   currencies: { sql: `SELECT id, code, name, symbol FROM catalogs_currencies WHERE is_active` },
@@ -75,10 +76,10 @@ const productsLookup = handler(
       ids: z.string().max(4000).optional()
     })
   },
-  ({ query: q }) => {
+  async ({ query: q }) => {
     const ids = q.ids ? q.ids.split(",").filter((x) => /^[0-9a-f-]{36}$/i.test(x)) : null;
-    return query(
-      `SELECT p.id, p.code, p.name, u.code AS "unitCode", u.decimals AS "unitDecimals",
+    const rows = await query<{ imageKey: string | null }>(
+      `SELECT p.id, p.code, p.name, p.barcode, fi.storage_key AS "imageKey", u.code AS "unitCode", u.decimals AS "unitDecimals",
               p.is_lot_controlled AS "isLotControlled", p.is_stockable AS "isStockable",
               p.shelf_life_days AS "shelfLifeDays", p.is_on_hold AS "isOnHold",
               p.stock_unit_id AS "stockUnitId", p.purchase_unit_id AS "purchaseUnitId", pu.code AS "purchaseUnitCode",
@@ -87,8 +88,9 @@ const productsLookup = handler(
          FROM products p JOIN catalogs_units u ON u.id = p.stock_unit_id
          LEFT JOIN catalogs_units pu ON pu.id = p.purchase_unit_id
          LEFT JOIN catalogs_units su ON su.id = p.sale_unit_id
+         LEFT JOIN files fi ON fi.id = p.image_file_id
         WHERE p.is_active
-          AND ($1::text IS NULL OR p.code ILIKE '%' || $1 || '%' OR p.name ILIKE '%' || $1 || '%')
+          AND ($1::text IS NULL OR p.code ILIKE '%' || $1 || '%' OR p.name ILIKE '%' || $1 || '%' OR p.barcode = $1)
           AND ($2::boolean IS NULL OR p.is_stockable = $2)
           AND ($3::uuid[] IS NULL OR p.id = ANY($3))
           AND ($4::boolean IS NULL OR p.is_purchased)
@@ -97,6 +99,7 @@ const productsLookup = handler(
         ORDER BY p.code LIMIT 30`,
       [q.search || null, q.stockable === undefined ? null : q.stockable === "true", ids, q.purchased ? true : null, q.sold ? true : null, q.manufactured ? true : null]
     );
+    return rows.map(({ imageKey, ...p }) => ({ ...p, imageThumb: imageUrls(imageKey)?.thumb ?? null }));
   }
 );
 

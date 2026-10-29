@@ -9,13 +9,15 @@
  *  - Con existencia o movimientos no se cambia la unidad de almacén ni el manejo por lote
  *    (las cantidades históricas quedarían en otra unidad o sin lote).
  *  - "Cantidad Total" de la tesis no se guarda: se calcula de stock_valuation (sin redundancia).
+ *  - La imagen (fase 11) se sube aparte (PUT /products/:id/image) y se devuelve como URLs firmadas.
  */
 
 import { z } from "zod";
 import type pg from "pg";
 import { one, query, withTx } from "../../db.js";
 import { badRequest, conflict, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
-import { txCtx } from "../../security/context.js";
+import { authOf, txCtx } from "../../security/context.js";
+import { imageUrls, insertFileRow, originalName, removeStored, storeImage } from "../files/images.js";
 import { warehouseScope } from "./scope.js";
 
 const money = z.number().min(0).max(1e13).nullish();
@@ -24,6 +26,13 @@ const factor = z.number().positive().max(1e9);
 const productFields = {
   name: z.string().trim().min(2).max(160),
   description: z.string().trim().max(800).nullish(),
+  /** Código de barras (EAN/UPC u otro); vacío = sin código */
+  barcode: z
+    .string()
+    .trim()
+    .regex(/^[0-9A-Za-z.-]{3,64}$/, "Código de barras: 3 a 64 letras, números, punto o guion")
+    .nullish()
+    .or(z.literal("").transform(() => null)),
   productTypeId: z.uuid(),
   familyId: z.uuid().nullish(),
   categoryId: z.uuid().nullish(),
@@ -65,6 +74,7 @@ const updateBody = z
 const COLUMNS: Record<string, string> = {
   name: "name",
   description: "description",
+  barcode: "barcode",
   productTypeId: "product_type_id",
   familyId: "family_id",
   categoryId: "category_id",
@@ -104,7 +114,8 @@ async function normalizeFlags(db: pg.PoolClient, b: Record<string, unknown>, typ
 }
 
 const SELECT = `
-  SELECT p.id, p.code, p.name, p.description, p.is_active AS "isActive", p.tags,
+  SELECT p.id, p.code, p.name, p.description, p.is_active AS "isActive", p.tags, p.barcode,
+         fi.storage_key AS "imageKey",
          p.product_type_id AS "productTypeId", t.code AS "typeCode", t.name AS "typeName", t.nature,
          p.family_id AS "familyId", f.name AS "familyName", p.category_id AS "categoryId", c.name AS "categoryName",
          p.stock_unit_id AS "stockUnitId", u.code AS "stockUnitCode", u.decimals AS "unitDecimals",
@@ -123,7 +134,13 @@ const SELECT = `
     JOIN catalogs_units u ON u.id = p.stock_unit_id
     LEFT JOIN catalogs_product_families f ON f.id = p.family_id
     LEFT JOIN catalogs_product_categories c ON c.id = p.category_id
-    LEFT JOIN fiscal_treatments ft ON ft.id = p.fiscal_treatment_id`;
+    LEFT JOIN fiscal_treatments ft ON ft.id = p.fiscal_treatment_id
+    LEFT JOIN files fi ON fi.id = p.image_file_id`;
+
+/** Cambia la clave interna de la imagen por sus URLs firmadas */
+export function withImage<T extends { imageKey?: unknown }>({ imageKey, ...row }: T) {
+  return { ...row, image: imageUrls(imageKey as string | null) };
+}
 
 const listQuery = pageQuery.extend({
   search: z.string().trim().max(80).optional(),
@@ -136,7 +153,7 @@ export const listProducts = handler({ query: listQuery }, async ({ query: q, req
   const scope = await warehouseScope(req);
   const rows = await query(
     `SELECT *, COUNT(*) OVER()::int AS total FROM (${SELECT}) x
-      WHERE ($2::text IS NULL OR x.code ILIKE '%' || $2 || '%' OR x.name ILIKE '%' || $2 || '%')
+      WHERE ($2::text IS NULL OR x.code ILIKE '%' || $2 || '%' OR x.name ILIKE '%' || $2 || '%' OR x.barcode = $2)
         AND ($3::uuid IS NULL OR x."productTypeId" = $3)
         AND ($4::uuid IS NULL OR x."familyId" = $4)
         AND ($5::boolean IS NULL OR x."isActive" = $5)
@@ -144,7 +161,7 @@ export const listProducts = handler({ query: listQuery }, async ({ query: q, req
     [scope, q.search || null, q.typeId ?? null, q.familyId ?? null, q.active === undefined ? null : q.active === "true", q.pageSize, (q.page - 1) * q.pageSize]
   );
   const total = (rows[0]?.total as number | undefined) ?? 0;
-  return { items: rows.map(({ total: _t, ...r }) => r), total, page: q.page, pageSize: q.pageSize };
+  return { items: rows.map(({ total: _t, ...r }) => withImage(r)), total, page: q.page, pageSize: q.pageSize };
 });
 
 async function productDetail(id: string, scope: string[] | null) {
@@ -168,7 +185,7 @@ async function productDetail(id: string, scope: string[] | null) {
       [id, scope]
     )
   ]);
-  return { ...product, relations, stock };
+  return { ...withImage(product), relations, stock };
 }
 
 export const getProduct = handler({ params: idParams }, async ({ params, req }) =>
@@ -236,13 +253,79 @@ export const updateProduct = handler({ params: idParams, body: updateBody }, asy
   return productDetail(params.id, await warehouseScope(req));
 });
 
-/** Baja física solo si nunca se movió (la FK de lotes/movimientos responde 409 IN_USE) */
+/** Baja física solo si nunca se movió (la FK de lotes/movimientos responde 409 IN_USE); se lleva su imagen */
 export const deleteProduct = handler({ params: idParams }, async ({ params, req }) => {
-  const row = await withTx(txCtx(req), (client) =>
-    one(`DELETE FROM products WHERE id = $1 RETURNING id`, [params.id], client)
-  );
-  if (!row) throw notFound("Producto no encontrado");
+  const key = await withTx(txCtx(req), async (client) => {
+    const row = await one<{ image_file_id: string | null }>(
+      `DELETE FROM products WHERE id = $1 RETURNING image_file_id`,
+      [params.id],
+      client
+    );
+    if (!row) throw notFound("Producto no encontrado");
+    return dropFile(client, row.image_file_id);
+  });
+  await removeStored(key);
   return undefined;
+});
+
+// ------------------------------------------------------------------ Imagen
+
+/** Borra el registro de un archivo y devuelve su clave (el contenido se borra tras el commit) */
+async function dropFile(client: pg.PoolClient, fileId: string | null): Promise<string | null> {
+  if (!fileId) return null;
+  const f = await one<{ storage_key: string }>(`DELETE FROM files WHERE id = $1 RETURNING storage_key`, [fileId], client);
+  return f?.storage_key ?? null;
+}
+
+/** PUT /products/:id/image — cuerpo crudo (PNG/JPG/WebP); reemplaza la anterior */
+export const setProductImage = handler({ params: idParams }, async ({ params, req }) => {
+  const body = req.body as unknown;
+  const buf = Buffer.isBuffer(body) ? body : Buffer.alloc(0);
+  if (!(await one(`SELECT 1 FROM products WHERE id = $1`, [params.id]))) throw notFound("Producto no encontrado");
+
+  const stored = await storeImage(buf, authOf(req).companyId);
+  let previous: string | null;
+  try {
+    previous = await withTx(txCtx(req), async (client) => {
+      const current = await one<{ image_file_id: string | null }>(
+        `SELECT image_file_id FROM products WHERE id = $1 FOR UPDATE`,
+        [params.id],
+        client
+      );
+      if (!current) throw notFound("Producto no encontrado");
+      await insertFileRow(client, stored, {
+        purpose: "product_image",
+        originalName: originalName(req),
+        originalMime: req.header("content-type") ?? "application/octet-stream",
+        originalBytes: buf.length
+      });
+      await client.query(`UPDATE products SET image_file_id = $2, updated_by = fn_current_app_user() WHERE id = $1`, [
+        params.id,
+        stored.id
+      ]);
+      return dropFile(client, current.image_file_id);
+    });
+  } catch (err) {
+    await removeStored(stored.storageKey);
+    throw err;
+  }
+  await removeStored(previous);
+  return productDetail(params.id, await warehouseScope(req));
+});
+
+export const removeProductImage = handler({ params: idParams }, async ({ params, req }) => {
+  const key = await withTx(txCtx(req), async (client) => {
+    const current = await one<{ image_file_id: string | null }>(
+      `SELECT image_file_id FROM products WHERE id = $1 FOR UPDATE`,
+      [params.id],
+      client
+    );
+    if (!current) throw notFound("Producto no encontrado");
+    await client.query(`UPDATE products SET image_file_id = NULL, updated_by = fn_current_app_user() WHERE id = $1`, [params.id]);
+    return dropFile(client, current.image_file_id);
+  });
+  await removeStored(key);
+  return productDetail(params.id, await warehouseScope(req));
 });
 
 const relationsBody = z.object({

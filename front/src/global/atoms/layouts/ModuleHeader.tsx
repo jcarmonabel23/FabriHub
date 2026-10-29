@@ -37,6 +37,11 @@ export default function ModuleHeader({ title, description, actions, right }: Rea
   const visible = (actions ?? []).filter(
     (a) => !a.requiredCode || (canAccess(a.requiredCode) && !statusOf(a.requiredCode).offline)
   );
+  // Resalta la acción más específica (p. ej. /pos/sales/tickets antes que /pos/sales)
+  const activePath = visible
+    .map((a) => a.path)
+    .filter((p) => pathname === p || pathname.startsWith(`${p}/`))
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -50,7 +55,7 @@ export default function ModuleHeader({ title, description, actions, right }: Rea
 
       <div className="flex flex-wrap items-center gap-2">
         {visible.map(({ id, label, path, icon: Icon }) => {
-          const isActive = pathname === path || pathname.startsWith(`${path}/`);
+          const isActive = path === activePath;
           return (
             <Button
               key={id}

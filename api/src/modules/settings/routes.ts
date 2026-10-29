@@ -18,6 +18,8 @@ import {
 } from "./catalogs.js";
 import { catalogCan } from "./catalogCan.js";
 import { getCompany, updateCompany } from "./company.js";
+import { removeCompanyImage, setCompanyImage } from "./branding.js";
+import { rawUpload } from "../files/images.js";
 import { listParameters, listSequences, resetParameter, updateParameter, updateSequence } from "./parameters.js";
 
 export const settingsRoutes = Router();
@@ -25,6 +27,10 @@ export const settingsRoutes = Router();
 // Empresa
 settingsRoutes.get("/company", can("SET_COMPANY", "view"), getCompany);
 settingsRoutes.put("/company", can("SET_COMPANY", "edit"), updateCompany);
+settingsRoutes.put("/company/logo", can("SET_COMPANY", "edit"), rawUpload, setCompanyImage("logo"));
+settingsRoutes.delete("/company/logo", can("SET_COMPANY", "edit"), removeCompanyImage("logo"));
+settingsRoutes.put("/company/icon", can("SET_COMPANY", "edit"), rawUpload, setCompanyImage("icon"));
+settingsRoutes.delete("/company/icon", can("SET_COMPANY", "edit"), removeCompanyImage("icon"));
 
 // Parámetros y correlativos
 settingsRoutes.get("/parameters", can("SET_PARAMETERS", "view"), listParameters);

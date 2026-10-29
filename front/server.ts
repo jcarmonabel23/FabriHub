@@ -29,7 +29,7 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
-  "img-src 'self' data:",
+  "img-src 'self' data: blob:",          // blob: vista previa de imágenes antes de subirlas
   "connect-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",

@@ -50,6 +50,12 @@ const schema = z.object({
   /** URL con la que los usuarios abren FabriHub (enlaces de los correos de alertas) */
   APP_PUBLIC_URL: z.url().default("http://localhost:8080").transform((v) => v.replace(/\/$/, "")),
 
+  /** Almacenamiento de archivos: local = volumen uploads (S3/R2 se agrega como otro driver) */
+  STORAGE_DRIVER: z.enum(["local"]).default("local"),
+  UPLOADS_DIR: z.string().default("/data/uploads"),
+  /** Tamaño máximo de una imagen subida, en MB */
+  UPLOAD_MAX_MB: z.coerce.number().positive().max(20).default(5),
+
   ADMIN_EMAIL: z.email(),
   ADMIN_INITIAL_PASSWORD: z.string().min(10)
 });

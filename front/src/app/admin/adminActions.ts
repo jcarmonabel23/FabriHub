@@ -4,13 +4,14 @@
  * @description Navegación entre pantallas de Seguridad (botones del ModuleHeader, filtrados por acceso)
  */
 
-import { IconApps, IconHistory, IconIdBadge2, IconUsers } from "@tabler/icons-react";
+import { IconApps, IconBuilding, IconHistory, IconIdBadge2, IconUsers } from "@tabler/icons-react";
 import type { HeaderAction } from "@atoms/layouts/ModuleHeader";
 
 export const ADMIN_ACTIONS: HeaderAction[] = [
   { id: "users", label: "Usuarios", path: "/admin/users", icon: IconUsers, requiredCode: "ADM_USERS" },
   { id: "roles", label: "Roles", path: "/admin/roles", icon: IconIdBadge2, requiredCode: "ADM_ROLES" },
   { id: "modules", label: "Módulos", path: "/admin/modules", icon: IconApps, requiredCode: "ADM_MODULES" },
+  { id: "companies", label: "Empresas", path: "/admin/companies", icon: IconBuilding, requiredCode: "ADM_COMPANIES" },
   { id: "audit", label: "Auditoría", path: "/admin/audit", icon: IconHistory, requiredCode: "ADM_AUDIT" }
 ];
 

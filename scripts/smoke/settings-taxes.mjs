@@ -61,7 +61,7 @@ export async function run() {
     body: { ...strip(company.json), legalName: "Laboratorio Demo, C.A.", rif: "j-12345678-9", isWithholdingAgent: true, phones: ["0212-5551234"] }
   });
   check("datos de la empresa guardados (RIF normalizado)", saved.json?.rif === "J-12345678-9" && saved.json?.isWithholdingAgent, saved.json);
-  const audit = await call("GET", "/admin/audit/data?table=company", { token: admin });
+  const audit = await call("GET", "/admin/audit/data?table=companies", { token: admin });
   check("el cambio de la empresa queda auditado", audit.json?.items?.[0]?.changedFields?.includes("rif"), audit.json?.items?.[0]);
 
   section("Parámetros y correlativos");
