@@ -11,6 +11,7 @@ import { Link } from "react-router-dom";
 import { Logo } from "@atoms/brand/Logo";
 import { coreAuth } from "@auth/store/coreAuth";
 import { ENVIRONMENT_LABEL } from "@config/environment";
+import ColorSchemeToggle from "./ColorSchemeToggle";
 import CompanySwitcher from "./CompanySwitcher";
 import NotificationBell from "./NotificationBell";
 import UserProfileMenu from "./UserProfileMenu";
@@ -42,6 +43,7 @@ export default function HeaderMain() {
             {ENVIRONMENT_LABEL[environment] ?? environment}
           </Badge>
         )}
+        <ColorSchemeToggle />
         <NotificationBell />
         <div className="w-px h-6 bg-gray-200 mx-1 hidden sm:block" />
         <UserProfileMenu />

@@ -33,7 +33,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
-        <MantineProvider theme={theme}>
+        <MantineProvider theme={theme} defaultColorScheme="light">
           <DatesProvider settings={{ locale: "es", firstDayOfWeek: 1 }}>
             <ModalsProvider labels={{ confirm: "Confirmar", cancel: "Cancelar" }}>
               <Notifications position="top-right" zIndex={2000} />

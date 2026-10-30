@@ -50,3 +50,51 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* ------------------------------------------------------------------ Modo oscuro
+ * Mantine cambia sus componentes solo. Las utilidades de Tailwind (bg-gray-50, text-gray-900,
+ * border-gray-200, bg-brand-50…) leen variables --color-*: aquí se invierte la escala de grises y
+ * los tonos claros pasan a transparencias, para no tocar cada pantalla.
+ */
+:root[data-mantine-color-scheme="dark"] {
+  color-scheme: dark;
+  --color-gray-50: #1a1b1e;
+  --color-gray-100: #2c2e33;
+  --color-gray-200: #373a40;
+  --color-gray-300: #4a4d55;
+  --color-gray-400: #7c8089;
+  --color-gray-500: #9a9ea6;
+  --color-gray-600: #b3b6bd;
+  --color-gray-700: #c9ccd1;
+  --color-gray-800: #dfe1e5;
+  --color-gray-900: #f1f3f5;
+  --color-brand-50: rgb(40 143 169 / 0.14);
+  --color-brand-100: rgb(40 143 169 / 0.24);
+  --color-brand-200: rgb(40 143 169 / 0.4);
+  --color-brand-300: rgb(40 143 169 / 0.6);
+  --color-teal-50: rgb(20 184 166 / 0.14);
+  --color-teal-600: #2dd4bf;
+  --color-teal-700: #5eead4;
+  --color-amber-50: rgb(245 158 11 / 0.14);
+  --color-amber-300: rgb(245 158 11 / 0.5);
+  --color-amber-700: #fcd34d;
+  --color-red-500: #f87171;
+  --color-red-700: #fca5a5;
+}
+
+:root[data-mantine-color-scheme="dark"] body {
+  background-color: var(--color-gray-50);
+  color: var(--mantine-color-text);
+}
+
+/* Superficies blancas (tarjetas, cabecera, menú) y textos de marca sobre fondo oscuro */
+:root[data-mantine-color-scheme="dark"] .bg-white {
+  background-color: var(--mantine-color-dark-7);
+}
+:root[data-mantine-color-scheme="dark"] .bg-white\/70 {
+  background-color: rgb(36 36 36 / 0.7);
+}
+:root[data-mantine-color-scheme="dark"] .text-brand-700,
+:root[data-mantine-color-scheme="dark"] .text-brand-600 {
+  color: #76bac9;
+}
