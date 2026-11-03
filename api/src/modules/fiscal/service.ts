@@ -18,7 +18,6 @@
 
 import type pg from "pg";
 import { z } from "zod";
-import { config } from "../../config.js";
 import { currentCompanyId, one, query, runInCompany, withTx, type Db } from "../../db.js";
 import { decryptSecret, encryptSecret } from "../../lib/crypto.js";
 import { badRequest, conflict, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
@@ -380,8 +379,8 @@ const settingsBody = z.object({
 
 export const saveFiscalSettings = handler({ body: settingsBody }, async ({ body: b, req }) => {
   await assertFiscalCountry();
-  // En producción la clave de API solo viaja cifrada
-  if (b.apiUrl && config.APP_ENVIRONMENT === "prod" && !b.apiUrl.startsWith("https://")) {
+  // En el ambiente de producción del proveedor la clave de API solo viaja cifrada (en pruebas vale un simulador http)
+  if (b.apiUrl && b.environment === "prod" && !b.apiUrl.startsWith("https://")) {
     throw badRequest("INSECURE_URL", "La URL de la imprenta digital debe usar https");
   }
   if (b.digitalEnabled) {

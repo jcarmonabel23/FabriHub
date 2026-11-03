@@ -98,7 +98,9 @@ function EinvoiceSettingsView() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["einvoice"] });
   const save = useMutation({
-    mutationFn: (body: EinvoiceSettingsInput) => einvoiceApi.saveSettings(body),
+    // Las URL simuladas solo viajan en el ambiente de pruebas
+    mutationFn: (body: EinvoiceSettingsInput) =>
+      einvoiceApi.saveSettings(body.environment === "prod" ? { ...body, idpUrl: null, apiUrl: null } : body),
     onSuccess: (data) => {
       notifySuccess("Configuración guardada");
       qc.setQueryData(["einvoice", "settings"], data);
@@ -293,16 +295,16 @@ function EinvoiceSettingsView() {
                   </Text>
                 )}
               </div>
-              {s.mockUrls && (
+              {s.mockUrls && form.environment === "sandbox" && (
                 <SimpleGrid cols={{ base: 1, md: 2 }}>
                   <TextInput
-                    label="IdP simulado (solo pruebas)"
+                    label="IdP simulado (opcional, solo pruebas)"
                     readOnly={readOnly}
                     value={form.idpUrl ?? ""}
                     onChange={(e) => set("idpUrl", e.currentTarget.value || null)}
                   />
                   <TextInput
-                    label="Recepción simulada (solo pruebas)"
+                    label="Recepción simulada (opcional, solo pruebas)"
                     readOnly={readOnly}
                     value={form.apiUrl ?? ""}
                     onChange={(e) => set("apiUrl", e.currentTarget.value || null)}

@@ -1,0 +1,32 @@
+# =====================================================================
+#  FabriHub · simuladores fiscales (solo para pruebas)
+#
+#    docker compose -f docker-compose.sim.yml up -d      (se reinicia solo con Docker)
+#    docker compose -f docker-compose.sim.yml down
+#
+#  Un contenedor con scripts/fiscal-sim/fiscal-sim.mjs en la red de la app (alias «fiscal-sim»):
+#    · Hacienda de Costa Rica     http://fiscal-sim:7790   (IdP /idp/token, recepción /api)
+#    · Imprenta digital (VE)      http://fiscal-sim:7789   (clave de API: clave-simulada)
+#    · Agente impresora fiscal    http://127.0.0.1:7788    (publicado solo en esta PC: lo llama el navegador)
+#  Hacienda e imprenta no se publican fuera de Docker: solo la API los alcanza.
+# =====================================================================
+
+services:
+  fiscal-sim:
+    image: node:22-alpine
+    container_name: fabrihub-fiscal-sim
+    restart: unless-stopped
+    command: ["node", "/sim/fiscal-sim.mjs", "all", "--host", "0.0.0.0", "--key", "clave-simulada", "--serial", "Z1F0000001"]
+    volumes:
+      - ./scripts/fiscal-sim:/sim:ro
+    ports:
+      - "127.0.0.1:7788:7788"
+    networks:
+      red_app:
+        aliases: [fiscal-sim]
+    mem_limit: 128m
+
+networks:
+  red_app:
+    external: true
+    name: fabrihub_red_app

@@ -17,7 +17,6 @@
 import { randomInt } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
-import { config } from "../../config.js";
 import { currentCompanyId, one, query, runInCompany, withTx, type Db } from "../../db.js";
 import { decryptSecret, encryptSecret } from "../../lib/crypto.js";
 import { badRequest, conflict, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
@@ -93,8 +92,8 @@ async function writeSecret(client: pg.PoolClient, key: string, value: string, hi
 
 function targetOf(s: Settings): Target {
   const e = ENDPOINTS[s.environment];
-  // Las URL simuladas solo valen fuera de producción y nunca en el ambiente «prod» de Hacienda
-  const mock = config.APP_ENVIRONMENT !== "prod" && s.environment === "sandbox";
+  // Las URL simuladas solo valen en el ambiente de pruebas (sandbox); en «prod» siempre las oficiales
+  const mock = s.environment === "sandbox";
   return {
     environment: s.environment,
     idpUrl: (mock && s.idp_url) || e.idp,
@@ -559,7 +558,7 @@ async function settingsView() {
     otherSigns: s?.other_signs ?? null,
     serviceUnit: s?.service_unit ?? "Sp",
     contingency: s?.contingency ?? false,
-    mockUrls: config.APP_ENVIRONMENT !== "prod" ? { idpUrl: s?.idp_url ?? null, apiUrl: s?.api_url ?? null } : null,
+    mockUrls: { idpUrl: s?.idp_url ?? null, apiUrl: s?.api_url ?? null },
     company: { email: company?.email ?? null, taxId: company?.rif ?? null, idType: company?.idType ?? null },
     credentials: {
       configured: secrets.has(SECRET.user) && secrets.has(SECRET.password),
@@ -592,14 +591,14 @@ const settingsBody = z.object({
   otherSigns: z.string().trim().min(5, "Otras señas: al menos 5 caracteres").max(250).nullish(),
   serviceUnit: z.enum(["Sp", "Spe", "Os", "St", "h"]).default("Sp"),
   contingency: z.boolean().default(false),
-  /** Solo fuera de producción: Hacienda simulado (pruebas de humo) */
+  /** Solo en el ambiente de pruebas (sandbox): Hacienda simulado (scripts/fiscal-sim) */
   idpUrl: z.url().nullish(),
   apiUrl: z.url().nullish()
 });
 
 export const saveEinvoiceSettings = handler({ body: settingsBody }, async ({ body: b, req }) => {
   await assertCostaRica();
-  if ((b.idpUrl || b.apiUrl) && config.APP_ENVIRONMENT === "prod") throw badRequest("SOURCE_URL_FORBIDDEN", "No disponible en producción");
+  if ((b.idpUrl || b.apiUrl) && b.environment === "prod") throw badRequest("SOURCE_URL_FORBIDDEN", "Las URL simuladas solo valen en el ambiente de pruebas de Hacienda");
   if (b.isEnabled) {
     const missing: string[] = [];
     if (!b.activityCode) missing.push("actividad económica");

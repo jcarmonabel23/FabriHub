@@ -22,7 +22,7 @@ export interface EinvoiceSettings {
   otherSigns: string | null;
   serviceUnit: "Sp" | "Spe" | "Os" | "St" | "h";
   contingency: boolean;
-  /** Solo fuera de producción */
+  /** URL simuladas de Hacienda (solo se usan en el ambiente de pruebas) */
   mockUrls: { idpUrl: string | null; apiUrl: string | null } | null;
   company: { email: string | null; taxId: string | null; idType: string | null };
   credentials: { configured: boolean; userHint: string | null; updatedAt: string | null };

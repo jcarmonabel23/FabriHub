@@ -6,8 +6,16 @@
  *   · agente local de impresora fiscal (protocolo 1 de FabriHub), para la PC de la caja;
  *   · API genérica de imprenta digital (la que consume el adaptador de la API).
  *
- * Uso:  node scripts/fiscal-sim/fiscal-sim.mjs [agent|digital|both] [--host 127.0.0.1]
- *         [--agent-port 7788] [--digital-port 7789] [--serial Z1F0000001] [--key clave-simulada]
+ *   · Hacienda de Costa Rica (IdP + API de recepción v4.4) para los comprobantes electrónicos (fase 18).
+ *
+ * Uso:  node scripts/fiscal-sim/fiscal-sim.mjs [agent|digital|hacienda|all] [--host 127.0.0.1]
+ *         [--agent-port 7788] [--digital-port 7789] [--hacienda-port 7790] [--serial Z1F0000001]
+ *         [--key clave-simulada] [--atv-user U --atv-password P]  (sin ellos, Hacienda acepta cualquier usuario)
+ *
+ * Cada simulador tiene POST /_sim para provocar fallas en las pruebas (sin autenticación: no publicarlo):
+ *   agente   { failNext: "Sin papel" | null, offline: true | false }
+ *   digital  { failNext: "down" | "reject" | null, down: true | false }
+ *   hacienda { rejectNext: true | false }   y GET /_sim con lo recibido y su verificación de firma
  *
  * ── Protocolo del agente (lo que un agente real debe implementar para su marca de impresora) ──
  *   GET  /v1/status       → { protocol: 1, driver, model, serial, ready, message?, zNumber, lastInvoice, lastCreditNote }
@@ -25,6 +33,7 @@
  *                         → 201 { documentNumber, controlNumber, issuedAt, pdfBase64 }; 409 mismo cuerpo si ya existía
  */
 
+import { createHash, createVerify, X509Certificate } from "node:crypto";
 import http from "node:http";
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -109,6 +118,12 @@ export function startAgent({ port = 7788, host = "127.0.0.1", serial = "Z1F00000
       vary: "origin"
     };
     if (req.method === "OPTIONS") return send(res, 204, undefined, cors);
+    if (req.method === "POST" && req.url === "/_sim") {
+      const b = (await readJson(req)) ?? {};
+      if ("failNext" in b) state.failNext = b.failNext || null;
+      if ("offline" in b) state.offline = Boolean(b.offline);
+      return send(res, 200, { failNext: state.failNext, offline: state.offline }, cors);
+    }
     if (state.offline) {
       req.socket.destroy();
       return;
@@ -197,6 +212,12 @@ export function startDigital({ port = 7789, host = "127.0.0.1", apiKey = "clave-
   };
   const server = http.createServer(async (req, res) => {
     state.requests++;
+    if (req.method === "POST" && req.url === "/_sim") {
+      const b = (await readJson(req)) ?? {};
+      if ("failNext" in b) state.failNext = b.failNext || null;
+      if ("down" in b) state.down = Boolean(b.down);
+      return send(res, 200, { failNext: state.failNext, down: state.down, issued: state.issued.size });
+    }
     const path = new URL(req.url, "http://digital").pathname;
     if (req.headers.authorization !== `Bearer ${apiKey}`) return send(res, 401, { error: { message: "Clave de API inválida" } });
     if (state.down) return send(res, 503, { error: { message: "Servicio en mantenimiento" } });
@@ -239,22 +260,123 @@ export function startDigital({ port = 7789, host = "127.0.0.1", apiKey = "clave-
   return new Promise((resolve) => server.listen(port, host, () => resolve({ server, state, url: `http://${host}:${port}` })));
 }
 
+// ------------------------------------------------------------------ Hacienda de Costa Rica
+
+const tag = (xml, name) => new RegExp(`<${name}(?: [^>]*)?>([^<]*)</${name}>`).exec(xml)?.[1] ?? null;
+
+/** Verificación independiente: digest del documento, firma RSA de SignedInfo y política v4.4 */
+export function verifySignedXml(xml) {
+  try {
+    const ns = /^<\?xml[^>]*\?><\w+ xmlns="([^"]+)">/.exec(xml)?.[1];
+    const body = xml.replace(/^<\?xml[^>]*\?>/, "").replace(/<ds:Signature [\s\S]*<\/ds:Signature>/, "");
+    const docDigest = /<ds:Reference Id="Reference-[^"]+" URI="">[\s\S]*?<ds:DigestValue>([^<]+)<\/ds:DigestValue>/.exec(xml)?.[1];
+    const digestOk = createHash("sha256").update(body).digest("base64") === docDigest;
+    const signedInfo = /<ds:SignedInfo>[\s\S]*?<\/ds:SignedInfo>/.exec(xml)?.[0] ?? "";
+    const c14n = signedInfo.replace("<ds:SignedInfo>", `<ds:SignedInfo xmlns="${ns}" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">`);
+    const cert = new X509Certificate(Buffer.from(tag(xml, "ds:X509Certificate") ?? "", "base64"));
+    const signatureOk = createVerify("RSA-SHA256").update(c14n).verify(cert.publicKey, tag(xml, "ds:SignatureValue") ?? "", "base64");
+    const policyOk = xml.includes("<ds:DigestValue>DWxin1xWOeI8OuWQXazh4VjLWAaCLAA954em7DMh0h8=</ds:DigestValue>");
+    return { digestOk, signatureOk, policyOk };
+  } catch (err) {
+    return { digestOk: false, signatureOk: false, policyOk: false, error: err.message };
+  }
+}
+
+const mensajeHacienda = (clave, ok, detail) =>
+  `<?xml version="1.0" encoding="UTF-8"?><MensajeHacienda xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/mensajeHacienda">` +
+  `<Clave>${clave}</Clave><NombreEmisor>Emisor</NombreEmisor><TipoIdentificacionEmisor>02</TipoIdentificacionEmisor>` +
+  `<NumeroCedulaEmisor>${clave.slice(9, 21).replace(/^0+/, "")}</NumeroCedulaEmisor><Mensaje>${ok ? 1 : 3}</Mensaje><DetalleMensaje>${detail}</DetalleMensaje>` +
+  `<MontoTotalImpuesto>0</MontoTotalImpuesto><TotalFactura>0</TotalFactura></MensajeHacienda>`;
+
+/**
+ * IdP en /idp/token (grant password, client_id api-stag) y recepción en /api/recepcion.
+ * En la empresa: ambiente de pruebas, IdP = {url}/idp/token y recepción = {url}/api.
+ * Un comprobante con firma inválida se rechaza; el primer GET de estado responde «procesando».
+ */
+export function startHacienda({ port = 7790, host = "127.0.0.1", user = null, password = null } = {}) {
+  const state = { tokens: 0, badLogins: 0, received: new Map(), polls: new Map(), rejectNext: false, rejected: new Set() };
+  const server = http.createServer(async (req, res) => {
+    let raw = "";
+    for await (const c of req) raw += c;
+    const url = new URL(req.url, "http://hacienda");
+    if (url.pathname === "/_sim" && req.method === "POST") {
+      const b = raw ? JSON.parse(raw) : {};
+      if ("rejectNext" in b) state.rejectNext = Boolean(b.rejectNext);
+      return send(res, 200, { rejectNext: state.rejectNext });
+    }
+    if (url.pathname === "/_sim" && req.method === "GET") {
+      const received = [...state.received.values()].map((r) => ({ clave: r.clave, verify: r.verify, rejected: state.rejected.has(r.clave) }));
+      return send(res, 200, { tokens: state.tokens, badLogins: state.badLogins, received });
+    }
+    if (url.pathname === "/idp/token" && req.method === "POST") {
+      const f = new URLSearchParams(raw);
+      const okUser = user ? f.get("username") === user && f.get("password") === password : Boolean(f.get("username") && f.get("password"));
+      if (f.get("grant_type") !== "password" || f.get("client_id") !== "api-stag" || !okUser) {
+        state.badLogins++;
+        return send(res, 401, { error: "invalid_grant", error_description: "Invalid user credentials" });
+      }
+      state.tokens++;
+      return send(res, 200, { access_token: `tok-${state.tokens}`, expires_in: 300, refresh_token: "r" });
+    }
+    const authorized = /^Bearer tok-\d+$/.test(req.headers.authorization ?? "");
+    if (url.pathname === "/api/recepcion" && req.method === "POST") {
+      if (!authorized) return send(res, 401, {});
+      const b = JSON.parse(raw);
+      if (state.received.has(b.clave)) {
+        res.writeHead(400, { "x-error-cause": "El comprobante ya fue recibido anteriormente" });
+        return res.end();
+      }
+      const xml = Buffer.from(b.comprobanteXml, "base64").toString("utf8");
+      const verify = verifySignedXml(xml);
+      state.received.set(b.clave, { clave: b.clave, xml, verify });
+      if (state.rejectNext || !verify.digestOk || !verify.signatureOk || !verify.policyOk) {
+        state.rejected.add(b.clave);
+        state.rejectNext = false;
+      }
+      res.writeHead(202);
+      return res.end();
+    }
+    const st = /^\/api\/recepcion\/(\d{50})$/.exec(url.pathname);
+    if (st && req.method === "GET") {
+      if (!authorized) return send(res, 401, {});
+      const r = state.received.get(st[1]);
+      if (!r) return send(res, 404, {});
+      const n = (state.polls.get(r.clave) ?? 0) + 1;
+      state.polls.set(r.clave, n);
+      if (n === 1) return send(res, 200, { clave: r.clave, "ind-estado": "procesando" });
+      const ok = !state.rejected.has(r.clave);
+      const v = r.verify;
+      const badSignature = !v.signatureOk || !v.digestOk || !v.policyOk;
+      const detail = ok ? "Comprobante aceptado (Hacienda simulado)" : badSignature ? "Rechazo simulado: la firma no es válida" : "Rechazo simulado a pedido de la prueba";
+      const respuesta = Buffer.from(mensajeHacienda(r.clave, ok, detail)).toString("base64");
+      return send(res, 200, { clave: r.clave, "ind-estado": ok ? "aceptado" : "rechazado", "respuesta-xml": respuesta });
+    }
+    send(res, 404, {});
+  });
+  return new Promise((resolve) => server.listen(port, host, () => resolve({ server, state, url: `http://${host}:${port}` })));
+}
+
 // ------------------------------------------------------------------ Línea de comandos
 
-if (process.argv[1]?.replaceAll("\\", "/").endsWith("fiscal-sim/fiscal-sim.mjs")) {
+if (process.argv[1]?.replaceAll("\\", "/").endsWith("/fiscal-sim.mjs")) {
   const args = process.argv.slice(2);
   const opt = (name, def) => {
     const i = args.indexOf(`--${name}`);
     return i >= 0 ? args[i + 1] : def;
   };
-  const mode = args[0] && !args[0].startsWith("--") ? args[0] : "both";
+  const mode = args[0] && !args[0].startsWith("--") ? args[0] : "all";
+  const all = mode === "all" || mode === "both";
   const host = opt("host", "127.0.0.1");
-  if (mode === "agent" || mode === "both") {
+  if (mode === "agent" || all) {
     const a = await startAgent({ host, port: Number(opt("agent-port", 7788)), serial: opt("serial", "Z1F0000001") });
     console.log(`Agente de impresora fiscal simulada en ${a.url} (serial ${a.state.serial})`);
   }
-  if (mode === "digital" || mode === "both") {
+  if (mode === "digital" || all) {
     const d = await startDigital({ host, port: Number(opt("digital-port", 7789)), apiKey: opt("key", "clave-simulada") });
     console.log(`Imprenta digital simulada en ${d.url}/  (clave de API: la indicada con --key)`);
+  }
+  if (mode === "hacienda" || all) {
+    const h = await startHacienda({ host, port: Number(opt("hacienda-port", 7790)), user: opt("atv-user", null), password: opt("atv-password", null) });
+    console.log(`Hacienda simulado en ${h.url}  (IdP ${h.url}/idp/token, recepción ${h.url}/api)`);
   }
 }
