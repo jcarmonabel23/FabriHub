@@ -6,7 +6,7 @@
 
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut, apiUpload } from "@clients/apiClient";
 import type { CompanyBranding } from "@auth/types";
-import type { CatalogItem, Company, LookupItem, Parameter, Rate, Sequence } from "../types";
+import type { CatalogItem, Company, LookupItem, Parameter, Rate, RateRun, RatesStatus, Sequence } from "../types";
 
 export const settingsApi = {
   // Catálogos comerciales (motor genérico)
@@ -21,6 +21,10 @@ export const settingsApi = {
   upsertRate: (currencyId: string, body: { rateDate: string; rate: number; source?: string }) =>
     apiPost<void>(`/settings/currencies/${currencyId}/rates`, body),
   deleteRate: (rateId: string) => apiDelete<void>(`/settings/currencies/rates/${rateId}`),
+  ratesStatus: () => apiGet<RatesStatus>("/settings/exchange-rates"),
+  runRates: () => apiPost<RateRun>("/settings/exchange-rates/run", {}),
+  saveBccrToken: (token: string) => apiPut<{ configured: boolean; hint: string }>("/settings/exchange-rates/token", { token }),
+  deleteBccrToken: () => apiDelete<void>("/settings/exchange-rates/token"),
 
   // Empresa
   getCompany: () => apiGet<Company>("/settings/company"),

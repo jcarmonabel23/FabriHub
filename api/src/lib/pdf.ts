@@ -81,7 +81,7 @@ export function renderPdf(spec: PdfDocumentSpec): Promise<Buffer> {
   }
   if (brand) {
     const info = [
-      `RIF ${brand.rif}`,
+      `${brand.taxIdLabel} ${brand.rif}`,
       brand.address,
       [brand.city, brand.phones.join(" / ")].filter(Boolean).join(" · ") || null,
       brand.email
@@ -108,7 +108,7 @@ export function renderPdf(spec: PdfDocumentSpec): Promise<Buffer> {
   // ---------------------------------------------------------------- Contraparte y datos del documento
   const boxTop = y;
   const half = (width - 12) / 2;
-  const partyLines = [spec.party.rif ? `RIF ${spec.party.rif}` : null, ...(spec.party.lines ?? [])].filter(Boolean) as string[];
+  const partyLines = [spec.party.rif ? `${brand?.taxIdLabel ?? "RIF"} ${spec.party.rif}` : null, ...(spec.party.lines ?? [])].filter(Boolean) as string[];
   doc.font("Helvetica-Bold").fontSize(7).fillColor(GRAY).text(spec.party.label.toUpperCase(), left + 8, boxTop + 7, { width: half - 16 });
   doc.font("Helvetica-Bold").fontSize(10).fillColor(TEXT).text(spec.party.name, left + 8, doc.y + 2, { width: half - 16 });
   doc.font("Helvetica").fontSize(8).fillColor("#374151").text(partyLines.join("\n"), left + 8, doc.y + 1, { width: half - 16 });
@@ -216,7 +216,7 @@ export function renderPdf(spec: PdfDocumentSpec): Promise<Buffer> {
   }
 
   // ---------------------------------------------------------------- Pie en todas las páginas
-  const issued = new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: "America/Caracas" }).format(new Date());
+  const issued = new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: brand?.timezone ?? "America/Caracas" }).format(new Date());
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);

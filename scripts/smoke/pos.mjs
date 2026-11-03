@@ -77,7 +77,7 @@ export async function run() {
   const quickDup = await call("POST", "/pos/customers", { token: admin, body: { rif, name: "Otro" } });
   check("cédula repetida → 409 con el cliente existente", quickDup.code === "CUSTOMER_EXISTS", quickDup.json);
   const quickBad = await call("POST", "/pos/customers", { token: admin, body: { rif: "X-123", name: "Malo" } });
-  check("identificación inválida → 400", quickBad.code === "INVALID_RIF", quickBad.json);
+  check("identificación inválida → 400", quickBad.code === "INVALID_TAX_ID", quickBad.json);
   const found = await call("GET", `/pos/customers?search=${rif.slice(2)}`, { token: admin });
   check("búsqueda por cédula", found.json?.[0]?.id === quick.json?.id, found.json);
 

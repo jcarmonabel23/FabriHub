@@ -24,17 +24,46 @@ export interface Rate {
   rateDate: string;
   rate: number;
   source: string | null;
+  /** La registró la consulta automática (BCV/BCCR); una corrección manual la vuelve manual */
+  isAutomatic: boolean;
+  valueDate: string | null;
   createdAt: string;
   createdBy: string | null;
+}
+
+/** Tasas automáticas (fase 16) */
+export interface RateRun {
+  id: string;
+  provider: string;
+  trigger: "schedule" | "manual";
+  status: "running" | "ok" | "partial" | "error";
+  message: string | null;
+  rates: { currency: string; rateDate: string; rate: number; action: "inserted" | "updated" | "unchanged" | "kept_manual" }[];
+  startedAt: string;
+  finishedAt: string | null;
+  createdBy: string | null;
+}
+
+export interface RatesStatus {
+  provider: { code: string; name: string; needsToken: boolean } | null;
+  autoEnabled: boolean;
+  intervalHours: number;
+  bccrSide: "sell" | "buy" | null;
+  token: { configured: boolean; hint: string | null; updatedAt: string | null } | null;
+  runs: RateRun[];
 }
 
 export interface Company {
   legalName: string;
   tradeName: string | null;
+  /** Tipo de identificación fiscal (RIF en VE; JURIDICA, FISICA… en CR) */
+  idType: string;
   rif: string;
   address: string | null;
   city: string | null;
   state: string | null;
+  /** País (fase 15): se fija al crear la empresa y no se edita aquí */
+  countryCode: string;
   country: string;
   phones: string[];
   email: string | null;

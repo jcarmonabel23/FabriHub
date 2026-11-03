@@ -18,6 +18,11 @@ import { imageUrls } from "../files/images.js";
 
 const SOURCES: Record<string, { sql: string; appliesTo?: boolean; orderBy?: string }> = {
   currencies: { sql: `SELECT id, code, name, symbol FROM catalogs_currencies WHERE is_active` },
+  // País (fase 15): para elegirlo al crear una empresa. El id es el código ISO
+  countries: {
+    sql: `SELECT code AS id, code, name, currency_code AS "currencyCode", tax_id_label AS "taxIdLabel", id_types AS "idTypes"
+            FROM catalogs_countries WHERE is_active`
+  },
   "payment-terms": { sql: `SELECT id, code, name, days FROM catalogs_payment_terms WHERE is_active`, appliesTo: true },
   "delivery-terms": { sql: `SELECT id, code, name FROM catalogs_delivery_terms WHERE is_active`, appliesTo: true },
   "delivery-methods": { sql: `SELECT id, code, name FROM catalogs_delivery_methods WHERE is_active`, appliesTo: true },

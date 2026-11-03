@@ -4,13 +4,14 @@
  * @description Navegación entre pantallas de Parámetros e Impuestos (filtradas por acceso)
  */
 
-import { IconBuilding, IconFileCertificate, IconListDetails, IconPercentage, IconScale, IconSettings } from "@tabler/icons-react";
+import { IconBuilding, IconFileCertificate, IconReceiptTax, IconListDetails, IconPercentage, IconScale, IconSettings } from "@tabler/icons-react";
 import type { HeaderAction } from "@atoms/layouts/ModuleHeader";
 
 export const SETTINGS_ACTIONS: HeaderAction[] = [
   { id: "company", label: "Empresa", path: "/settings/company", icon: IconBuilding, requiredCode: "SET_COMPANY" },
   { id: "parameters", label: "Parámetros", path: "/settings/parameters", icon: IconSettings, requiredCode: "SET_PARAMETERS" },
-  { id: "commercial", label: "Catálogos", path: "/settings/commercial", icon: IconListDetails, requiredCode: "SET_COMMERCIAL" }
+  { id: "commercial", label: "Catálogos", path: "/settings/commercial", icon: IconListDetails, requiredCode: "SET_COMMERCIAL" },
+  { id: "einvoice", label: "Comprobantes", path: "/settings/einvoice", icon: IconReceiptTax, requiredCode: "SET_COMPANY", countryFeature: "eInvoice" }
 ];
 
 export const TAX_ACTIONS: HeaderAction[] = [

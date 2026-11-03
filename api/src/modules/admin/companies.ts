@@ -11,20 +11,23 @@
  *   configure  → agregar o retirar miembros
  * Los miembros se gestionan DENTRO de la empresa destino (withTx con su companyId), porque
  * sus permisos están aislados por RLS.
+ * El país (fase 15) se elige al crear la empresa y no cambia: define impuestos, identificación
+ * fiscal, moneda local y zona horaria.
  */
 
 import { z } from "zod";
 import { one, query, withTx } from "../../db.js";
 import { badRequest, conflict, forbidden, handler, notFound } from "../../lib/http.js";
 import { sendTemporaryPassword } from "../../lib/mailer.js";
+import { countryByCode, normalizeTaxId } from "../../lib/taxId.js";
 import { authOf, txCtx } from "../../security/context.js";
 import { addMember, removeMember, type AddedMember } from "./members.js";
 import { companyBranding } from "../settings/branding.js";
 
 export const COMPANIES_MODULE = "ADM_COMPANIES";
 
-const SELECT = `SELECT c.id, c.code, c.legal_name AS "legalName", c.trade_name AS "tradeName", c.rif, c.is_active AS "isActive",
-  c.city, c.country, c.email, c.base_currency_id AS "baseCurrencyId", cur.code AS "baseCurrencyCode", c.created_at AS "createdAt",
+const SELECT = `SELECT c.id, c.code, c.legal_name AS "legalName", c.trade_name AS "tradeName", c.id_type AS "idType", c.rif, c.is_active AS "isActive",
+  c.city, c.country_code AS "countryCode", c.country, c.email, c.base_currency_id AS "baseCurrencyId", cur.code AS "baseCurrencyCode", c.created_at AS "createdAt",
   (SELECT COUNT(*)::int FROM users_companies uc WHERE uc.company_id = c.id AND uc.is_active) AS "membersCount"
   FROM companies c JOIN catalogs_currencies cur ON cur.id = c.base_currency_id`;
 
@@ -51,13 +54,9 @@ const optionalText = (max: number) =>
 const companyFields = {
   legalName: z.string().trim().min(3).max(160),
   tradeName: optionalText(120),
-  rif: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[VEJPG]-\d{8}-\d$/, "Formato de RIF: J-12345678-9"),
+  idType: z.string().trim().toUpperCase().max(12).nullish(),
+  rif: z.string().trim().min(3).max(25),
   city: optionalText(80),
-  country: z.string().trim().min(2).max(80).default("Venezuela"),
   email: z.email().max(200).nullish().or(z.literal("").transform(() => null)),
   baseCurrencyId: z.uuid()
 };
@@ -69,6 +68,10 @@ const createBody = z.object({
     .toUpperCase()
     .regex(/^[A-Z0-9_-]{2,20}$/, "Código: 2 a 20 letras, números, - o _"),
   ...companyFields,
+  /** País de la empresa (VE, CR); no se puede cambiar después */
+  countryCode: z.string().trim().toUpperCase().length(2).default("VE"),
+  /** Sin moneda base, la local del país */
+  baseCurrencyId: z.uuid().optional(),
   /** Empresa de la que se copia la configuración base (por defecto, la activa) */
   templateCompanyId: z.uuid().optional(),
   /** Administrador inicial: un usuario existente o uno nuevo (con nombre) */
@@ -94,15 +97,32 @@ export const createCompany = handler({ body: createBody }, async ({ body, req })
   if (await one(`SELECT 1 FROM companies WHERE code = $1`, [body.code])) {
     throw conflict("CODE_TAKEN", "Ya existe una empresa con ese código");
   }
-  await assertCurrency(body.baseCurrencyId);
+  const country = await countryByCode(body.countryCode);
+  const taxId = normalizeTaxId(country, body.rif, body.idType);
+  const baseCurrencyId =
+    body.baseCurrencyId ?? (await one<{ id: string }>(`SELECT id FROM catalogs_currencies WHERE code = $1`, [country.currencyCode]))?.id;
+  if (!baseCurrencyId) throw badRequest("INVALID_CURRENCY", `La moneda ${country.currencyCode} no está en el catálogo`);
+  await assertCurrency(baseCurrencyId);
   const template = body.templateCompanyId ?? authOf(req).companyId;
   if (!(await one(`SELECT 1 FROM companies WHERE id = $1`, [template]))) throw badRequest("INVALID_TEMPLATE", "Empresa plantilla inexistente");
 
   const companyId = await withTx(txCtx(req), async (client) => {
     const created = await one<{ id: string }>(
-      `INSERT INTO companies (code, legal_name, trade_name, rif, city, country, email, base_currency_id, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, fn_current_app_user(), fn_current_app_user()) RETURNING id`,
-      [body.code, body.legalName, body.tradeName ?? null, body.rif, body.city ?? null, body.country, body.email ?? null, body.baseCurrencyId],
+      `INSERT INTO companies (code, legal_name, trade_name, id_type, rif, city, country_code, country, email, base_currency_id,
+                              created_by, updated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, fn_current_app_user(), fn_current_app_user()) RETURNING id`,
+      [
+        body.code,
+        body.legalName,
+        body.tradeName ?? null,
+        taxId.idType,
+        taxId.value,
+        body.city ?? null,
+        country.code,
+        country.name,
+        body.email ?? null,
+        baseCurrencyId
+      ],
       client
     );
     await client.query(`SELECT fn_company_init($1, $2)`, [created!.id, template]);
@@ -138,13 +158,19 @@ export const updateCompanyAdmin = handler(
       throw forbidden("ACTIVE_COMPANY", "No puede suspender la empresa en la que está trabajando; cambie de empresa primero");
     }
     if (body.baseCurrencyId) await assertCurrency(body.baseCurrencyId);
+    let taxId: { idType: string | null; value: string | null } = { idType: null, value: null };
+    if (body.rif !== undefined || body.idType !== undefined) {
+      const current = await one<{ rif: string; country_code: string }>(`SELECT rif, country_code FROM companies WHERE id = $1`, [params.id]);
+      if (!current) throw notFound("Empresa no encontrada");
+      taxId = normalizeTaxId(await countryByCode(current.country_code), body.rif ?? current.rif, body.idType);
+    }
 
     await withTx(txCtx(req), async (client) => {
       const row = await one(
         `UPDATE companies SET
                 legal_name = COALESCE($2, legal_name), trade_name = CASE WHEN $3::boolean THEN $4 ELSE trade_name END,
                 rif = COALESCE($5, rif), city = CASE WHEN $6::boolean THEN $7 ELSE city END,
-                country = COALESCE($8, country), email = CASE WHEN $9::boolean THEN $10 ELSE email END,
+                id_type = COALESCE($8, id_type), email = CASE WHEN $9::boolean THEN $10 ELSE email END,
                 base_currency_id = COALESCE($11, base_currency_id), is_active = COALESCE($12, is_active),
                 updated_by = fn_current_app_user()
           WHERE id = $1 RETURNING id`,
@@ -153,10 +179,10 @@ export const updateCompanyAdmin = handler(
           body.legalName ?? null,
           "tradeName" in body,
           body.tradeName ?? null,
-          body.rif ?? null,
+          taxId.value,
           "city" in body,
           body.city ?? null,
-          body.country ?? null,
+          taxId.idType,
           "email" in body,
           body.email ?? null,
           body.baseCurrencyId ?? null,

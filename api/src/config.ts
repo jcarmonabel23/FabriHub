@@ -57,7 +57,13 @@ const schema = z.object({
   UPLOAD_MAX_MB: z.coerce.number().positive().max(20).default(5),
 
   ADMIN_EMAIL: z.email(),
-  ADMIN_INITIAL_PASSWORD: z.string().min(10)
+  ADMIN_INITIAL_PASSWORD: z.string().min(10),
+
+  /**
+   * Clave para cifrar secretos por empresa (token del BCCR), 32 bytes en base64 o hex.
+   * Vacía = se deriva de JWT_ACCESS_SECRET (cambiar ese secreto obliga a volver a cargar los tokens).
+   */
+  SECRETS_KEY: z.string().optional().transform((v) => v || undefined)
 });
 
 const parsed = schema.safeParse(process.env);

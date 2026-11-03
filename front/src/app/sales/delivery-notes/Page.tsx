@@ -17,6 +17,7 @@ import PdfButton from "@atoms/actions/PdfButton";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import { useCan } from "@modules/access-control/useCan";
+import { useCountry } from "@modules/country/country";
 import { QUALITY_COLOR, QUALITY_LABEL, type QualityStatus } from "@/app/inventory/types";
 import { fmtDateTime, fmtMoney } from "@utils/format";
 import { notifyError, notifySuccess } from "@utils/notify";
@@ -31,6 +32,7 @@ const qty = (v: number) => fmtMoney(v, v % 1 === 0 ? 0 : 3);
 const fmtD = (d: string | null) => (d ? dayjs(d).format("DD/MM/YYYY") : "—");
 
 function DeliveryDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: () => void }>) {
+  const country = useCountry();
   const qc = useQueryClient();
   const can = useCan(MODULE);
   const detail = useQuery({ queryKey: ["sales", "deliveries", id], queryFn: () => salesApi.getDelivery(id!), enabled: Boolean(id) });
@@ -68,7 +70,7 @@ function DeliveryDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: 
             </Title>
             <Text fw={600}>{n.customerName}</Text>
             <Text size="sm" c="dimmed">
-              RIF {n.customerRif} · orden {n.orderNumber} · {fmtD(n.deliveryDate)} · desde {n.warehouseCode}
+              {country.taxIdLabel} {n.customerRif} · orden {n.orderNumber} · {fmtD(n.deliveryDate)} · desde {n.warehouseCode}
               {n.carrier ? ` · ${n.carrier}` : ""}
             </Text>
             <Text size="xs" c="dimmed">

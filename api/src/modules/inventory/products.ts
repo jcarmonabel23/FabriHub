@@ -52,6 +52,13 @@ const productFields = {
   isOnHold: z.boolean().default(false),
   shelfLifeDays: z.number().int().positive().max(36500).nullish(),
   fiscalTreatmentId: z.uuid().nullish(),
+  /** Costa Rica: código CABYS de Hacienda (13 dígitos); vacío = sin código */
+  cabysCode: z
+    .string()
+    .trim()
+    .regex(/^[0-9]{13}$/, "CABYS: 13 dígitos")
+    .nullish()
+    .or(z.literal("").transform(() => null)),
   salePrice: money,
   purchasePrice: money,
   standardCost: money
@@ -94,6 +101,7 @@ const COLUMNS: Record<string, string> = {
   isOnHold: "is_on_hold",
   shelfLifeDays: "shelf_life_days",
   fiscalTreatmentId: "fiscal_treatment_id",
+  cabysCode: "cabys_code",
   salePrice: "sale_price",
   purchasePrice: "purchase_price",
   standardCost: "standard_cost",
@@ -125,7 +133,7 @@ const SELECT = `
          p.is_stockable AS "isStockable", p.is_lot_controlled AS "isLotControlled", p.is_purchased AS "isPurchased",
          p.is_sold AS "isSold", p.is_manufactured AS "isManufactured", p.is_on_hold AS "isOnHold",
          p.shelf_life_days AS "shelfLifeDays", p.fiscal_treatment_id AS "fiscalTreatmentId", ft.code AS "fiscalTreatmentCode",
-         p.sale_price::float AS "salePrice", p.purchase_price::float AS "purchasePrice", p.standard_cost::float AS "standardCost",
+         p.cabys_code AS "cabysCode", p.sale_price::float AS "salePrice", p.purchase_price::float AS "purchasePrice", p.standard_cost::float AS "standardCost",
          p.updated_at AS "updatedAt",
          COALESCE((SELECT SUM(v.quantity) FROM stock_valuation v
                     WHERE v.product_id = p.id AND ($1::uuid[] IS NULL OR v.warehouse_id = ANY($1))), 0)::float AS "totalQuantity"
@@ -228,7 +236,9 @@ export const updateProduct = handler({ params: idParams, body: updateBody }, asy
     );
     if (!current) throw notFound("Producto no encontrado");
 
-    const b = { ...body } as Record<string, unknown>;
+    // Solo lo que vino en la petición: los valores por defecto del esquema no pisan lo guardado
+    const sent = new Set(Object.keys((req.body ?? {}) as object));
+    const b = Object.fromEntries(Object.entries(body).filter(([k]) => sent.has(k))) as Record<string, unknown>;
     b.isStockable ??= current.is_stockable;
     b.isLotControlled ??= current.is_lot_controlled;
     await normalizeFlags(client, b, (body.productTypeId ?? current.product_type_id) as string);

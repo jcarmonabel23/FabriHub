@@ -40,6 +40,8 @@ export interface ProductRow {
   shelfLifeDays: number | null;
   fiscalTreatmentId: string | null;
   fiscalTreatmentCode: string | null;
+  /** Costa Rica: código CABYS (13 dígitos) */
+  cabysCode: string | null;
   salePrice: number | null;
   purchasePrice: number | null;
   standardCost: number | null;

@@ -33,6 +33,8 @@ export interface Customer {
   code: string;
   legalName: string;
   tradeName: string | null;
+  /** Tipo de identificación fiscal del país de la empresa (RIF, CI, FISICA, JURIDICA…) */
+  idType: string;
   rif: string;
   phones: string[];
   email: string | null;

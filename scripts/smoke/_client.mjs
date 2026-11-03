@@ -36,7 +36,15 @@ export async function call(method, path, { token, body, cookie, headers: extra }
   const headers = { "content-type": raw ? "application/octet-stream" : "application/json", ...extra };
   if (token) headers.authorization = `Bearer ${token}`;
   if (cookie) headers.cookie = cookie;
-  const res = await fetch(`${API}${path}`, { method, headers, body: raw ? body : body ? JSON.stringify(body) : undefined });
+  let res = await fetch(`${API}${path}`, { method, headers, body: raw ? body : body ? JSON.stringify(body) : undefined });
+  // Límite general de la API (600/min por IP): la batería completa corre desde una sola IP y puede
+  // alcanzarlo; se espera la ventana y se repite. El límite de /auth se prueba aparte (ratelimit.mjs).
+  if (res.status === 429 && !path.startsWith("/auth/")) {
+    const wait = Number(res.headers.get("retry-after")) || 60;
+    console.log(`  … límite general de la API alcanzado; se espera ${wait} s`);
+    await sleep(wait * 1000 + 500);
+    res = await fetch(`${API}${path}`, { method, headers, body: raw ? body : body ? JSON.stringify(body) : undefined });
+  }
   const text = await res.text();
   let json = null;
   try {
@@ -109,4 +117,11 @@ export async function adminSession() {
   }
   adminToken = s.token;
   return s.token;
+}
+
+/** Cierra un turno declarando como contado lo esperado de cada medio y moneda (limpieza de las suites) */
+export async function closeSessionAsExpected(token, sessionId, notes = "Cierre de la prueba de humo") {
+  const s = (await call("GET", `/pos/sessions/${sessionId}`, { token })).json;
+  const counts = (s?.counts ?? []).map((c) => ({ method: c.method, currencyId: c.currencyId, amount: Math.max(0, c.expected) }));
+  return call("POST", `/pos/sessions/${sessionId}/close`, { token, body: { counts, notes } });
 }

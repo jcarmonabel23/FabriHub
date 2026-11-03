@@ -24,7 +24,8 @@ interface ParameterRow {
   dataType: "string" | "integer" | "number" | "boolean" | "select";
   value: unknown;
   defaultValue: unknown;
-  rules: { min?: number; max?: number; maxLength?: number; options?: { value: string; label: string }[] };
+  /** countries: solo aplica en esos países (fase 16); en los demás no se lista */
+  rules: { min?: number; max?: number; maxLength?: number; options?: { value: string; label: string }[]; countries?: string[] };
   updatedAt: string;
   updatedBy: string | null;
 }
@@ -34,7 +35,13 @@ const SELECT = `SELECT p.id, p.module_code AS "moduleCode", m.name AS "moduleNam
   u.names AS "updatedBy"
   FROM parameters p JOIN catalogs_modules m ON m.code = p.module_code LEFT JOIN users u ON u.id = p.updated_by`;
 
-export const listParameters = handler({}, () => query<ParameterRow>(`${SELECT} ORDER BY m.order_list, p.order_list`));
+export const listParameters = handler({}, () =>
+  query<ParameterRow>(
+    `${SELECT}
+      WHERE NOT (p.rules ? 'countries') OR p.rules -> 'countries' ? fn_current_country()
+      ORDER BY m.order_list, p.order_list`
+  )
+);
 
 /** Valida un valor contra la definición del parámetro; devuelve el valor normalizado */
 export function validateParameterValue(p: Pick<ParameterRow, "dataType" | "rules" | "name">, value: unknown): unknown {

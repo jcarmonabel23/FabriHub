@@ -6,22 +6,19 @@
 
 import { useState } from "react";
 import { Tabs } from "@mantine/core";
-import { useQuery } from "@tanstack/react-query";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
-import { useCanAccess } from "@modules/access-control/useCan";
-import { settingsApi } from "../services/settings.service";
+import { coreAuth } from "@auth/store/coreAuth";
 import { SETTINGS_ACTIONS } from "../settingsActions";
 import type { CatalogItem } from "../types";
 import { COMMERCIAL_CATALOGS } from "./catalogsUi";
+import AutoRatesPanel from "./components/AutoRatesPanel";
 import CatalogTab from "./components/CatalogTab";
 import RatesDrawer from "./components/RatesDrawer";
 
 export default function CommercialCatalogsPage() {
   const [ratesFor, setRatesFor] = useState<CatalogItem | null>(null);
-  const canAccess = useCanAccess();
-  // La moneda base vive en Empresa; si no hay acceso a esa pantalla se asume VES.
-  const company = useQuery({ queryKey: ["settings", "company"], queryFn: settingsApi.getCompany, enabled: canAccess("SET_COMPANY") });
-  const baseCode = company.data?.baseCurrencyCode ?? "VES";
+  // Moneda base de la empresa activa (viene en la sesión)
+  const baseCode = coreAuth((s) => s.company?.baseCurrencyCode) ?? "VES";
 
   return (
     <div className="p-6">
@@ -36,6 +33,7 @@ export default function CommercialCatalogsPage() {
         </Tabs.List>
         {COMMERCIAL_CATALOGS.map((c) => (
           <Tabs.Panel key={c.key} value={c.key}>
+            {c.key === "currencies" && <AutoRatesPanel baseCode={baseCode} />}
             <CatalogTab ui={c} onRates={c.key === "currencies" ? setRatesFor : undefined} />
           </Tabs.Panel>
         ))}

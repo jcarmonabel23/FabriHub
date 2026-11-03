@@ -18,6 +18,7 @@ import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import { coreAuth } from "@auth/store/coreAuth";
 import { useCan, useCanAccess } from "@modules/access-control/useCan";
+import { useCountry } from "@modules/country/country";
 import { fmtDateTime, fmtMoney, fmtPct } from "@utils/format";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { SALES_ACTIONS } from "../salesActions";
@@ -42,6 +43,7 @@ function askReason(title: string, label: string, color: string, onConfirm: (reas
 }
 
 function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onClose: () => void; onEdit: (o: SalesOrderDetail) => void }>) {
+  const country = useCountry();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const can = useCan(MODULE);
@@ -90,7 +92,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
             </Title>
             <Text fw={600}>{o.customerName}</Text>
             <Text size="sm" c="dimmed">
-              RIF {o.customerRif} · {fmtD(o.orderDate)} · despacha {o.warehouseCode} · {o.currencyCode}
+              {country.taxIdLabel} {o.customerRif} · {fmtD(o.orderDate)} · despacha {o.warehouseCode} · {o.currencyCode}
               {o.exchangeRate !== 1 ? ` (tasa ${fmtMoney(o.exchangeRate, 4)})` : ""}
               {o.sellerName ? ` · vendedor ${o.sellerName}` : ""}
             </Text>

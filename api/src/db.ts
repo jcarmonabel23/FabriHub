@@ -81,12 +81,16 @@ export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   const client = await pool.connect();
   let broken = false;
   try {
-    await client.query("SELECT set_config('app.company_id', $1, false)", [companyId]);
+    // Empresa y su zona horaria (fase 15): CURRENT_DATE y now() siguen la hora local de la empresa
+    await client.query(
+      "SELECT set_config('app.company_id', $1, false), set_config('TimeZone', COALESCE(fn_company_timezone($1::uuid), current_setting('TimeZone')), false)",
+      [companyId]
+    );
     const result = await client.query<T>(text, params);
     return result.rows;
   } finally {
     try {
-      await client.query("SELECT set_config('app.company_id', '', false)");
+      await client.query("SELECT set_config('app.company_id', '', false); RESET TimeZone");
     } catch {
       broken = true; // sin limpiar, la conexión se descarta: nunca vuelve al pool con otra empresa
     }
@@ -116,7 +120,8 @@ export async function withTx<T>(ctx: TxContext, fn: (client: pg.PoolClient) => P
   try {
     await client.query("BEGIN");
     await client.query(
-      "SELECT set_config('app.user_id', $1, true), set_config('app.trace_id', $2, true), set_config('app.company_id', $3, true)",
+      `SELECT set_config('app.user_id', $1, true), set_config('app.trace_id', $2, true), set_config('app.company_id', $3, true),
+              set_config('TimeZone', COALESCE(fn_company_timezone(NULLIF($3, '')::uuid), current_setting('TimeZone')), true)`,
       [ctx.userId ?? "", ctx.traceId ?? "", ctx.companyId ?? currentCompanyId() ?? ""]
     );
     const result = await fn(client);

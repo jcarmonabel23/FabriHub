@@ -1,7 +1,7 @@
 /**
  * @project FabriHub - Front
  * @file src/app/pos/sales/components/CustomerPicker.tsx
- * @description Cliente de la venta: búsqueda por RIF, cédula o nombre, alta rápida y «Consumidor final»
+ * @description Cliente de la venta: búsqueda por identificación (RIF, cédula…) o nombre, alta rápida y «Consumidor final»
  */
 
 import { useEffect, useState } from "react";
@@ -9,7 +9,10 @@ import { Button, Divider, Group, Loader, Modal, Stack, Text, TextInput, Unstyled
 import { useDebouncedValue } from "@mantine/hooks";
 import { IconSearch, IconUser, IconUserPlus } from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import TaxIdInput from "@atoms/forms/TaxIdInput";
 import { ApiError } from "@clients/apiClient";
+import type { CompanyCountry } from "@auth/types";
+import { detectIdType, taxIdError, useCountry } from "@modules/country/country";
 import { notifyError } from "@utils/notify";
 import { posApi } from "../../services/pos.service";
 import type { PosCustomer } from "../../types";
@@ -22,14 +25,15 @@ interface Props {
   onChange: (c: PosCustomer | null) => void;
 }
 
-/** ¿Parece una cédula o RIF? (para ofrecer el alta con ese número) */
-const looksLikeId = (s: string) => /^[VEJPGvejpg]?[\s-]?\d{5,9}[\s-]?\d?$/.test(s.trim());
+/** ¿Parece una identificación del país? (para ofrecer el alta con ese número) */
+const looksLikeId = (country: CompanyCountry, s: string) => Boolean(detectIdType(country, s)) || /^[A-Za-z]?[\s.-]?\d[\d\s.-]{4,}$/.test(s.trim());
 
 export default function CustomerPicker({ value, applied, onChange }: Readonly<Props>) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [debounced] = useDebouncedValue(search.trim(), 300);
-  const [form, setForm] = useState<{ rif: string; name: string; phone: string } | null>(null);
+  const country = useCountry();
+  const [form, setForm] = useState<{ idType: string | null; rif: string; name: string; phone: string } | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -50,7 +54,7 @@ export default function CustomerPicker({ value, applied, onChange }: Readonly<Pr
   };
 
   const create = useMutation({
-    mutationFn: () => posApi.createCustomer({ rif: form!.rif, name: form!.name.trim(), phone: form!.phone.trim() || null }),
+    mutationFn: () => posApi.createCustomer({ idType: form!.idType, rif: form!.rif, name: form!.name.trim(), phone: form!.phone.trim() || null }),
     onSuccess: pick,
     onError: async (err) => {
       // Ya existía: se elige el existente
@@ -83,7 +87,7 @@ export default function CustomerPicker({ value, applied, onChange }: Readonly<Pr
         <Stack>
           <TextInput
             data-autofocus
-            placeholder="Cédula, RIF o nombre"
+            placeholder={`${country.idTypes.map((t) => t.name).join(", ")} o nombre`}
             leftSection={<IconSearch size={16} />}
             rightSection={found.isFetching ? <Loader size="xs" /> : null}
             value={search}
@@ -110,22 +114,23 @@ export default function CustomerPicker({ value, applied, onChange }: Readonly<Pr
 
           {form ? (
             <Stack gap="xs" className="rounded-lg bg-gray-50 p-3">
-              <Group grow align="flex-start">
-                <TextInput label="Cédula o RIF" required placeholder="V-12345678" value={form.rif} onChange={(e) => setForm({ ...form, rif: e.currentTarget.value })} />
-                <TextInput label="Teléfono" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} />
-              </Group>
+              <TaxIdInput country={country} idType={form.idType} value={form.rif} required onChange={(idType, rif) => setForm({ ...form, idType, rif })} />
+              <TextInput label="Teléfono" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} />
               <TextInput label="Nombre o razón social" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} />
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setForm(null)}>
                   Cancelar
                 </Button>
-                <Button loading={create.isPending} disabled={form.rif.trim().length < 5 || form.name.trim().length < 3} onClick={() => create.mutate()}>
+                <Button loading={create.isPending} disabled={!form.rif.trim() || Boolean(taxIdError(country, form.idType, form.rif)) || form.name.trim().length < 3} onClick={() => create.mutate()}>
                   Registrar y usar
                 </Button>
               </Group>
             </Stack>
           ) : (
-            <Button variant="light" leftSection={<IconUserPlus size={16} />} onClick={() => setForm({ rif: looksLikeId(search) ? search.trim() : "", name: looksLikeId(search) ? "" : search.trim(), phone: "" })}>
+            <Button variant="light" leftSection={<IconUserPlus size={16} />} onClick={() => {
+              const isId = looksLikeId(country, search);
+              setForm({ idType: isId ? (detectIdType(country, search)?.code ?? null) : null, rif: isId ? search.trim() : "", name: isId ? "" : search.trim(), phone: "" });
+            }}>
               Cliente nuevo
             </Button>
           )}

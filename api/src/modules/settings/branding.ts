@@ -36,6 +36,10 @@ export interface Branding {
   name: string;
   legalName: string;
   rif: string;
+  /** Cómo se llama la identificación fiscal en el país de la empresa (RIF, Cédula) */
+  taxIdLabel: string;
+  /** Zona horaria de la empresa (la de su país), para fechas en documentos */
+  timezone: string;
   address: string | null;
   city: string | null;
   phones: string[];
@@ -55,6 +59,8 @@ export async function companyBranding(companyId: string): Promise<Branding | nul
     name: string;
     legal_name: string;
     rif: string;
+    tax_id_label: string;
+    timezone: string;
     address: string | null;
     city: string | null;
     phones: string[] | null;
@@ -62,9 +68,9 @@ export async function companyBranding(companyId: string): Promise<Branding | nul
     brand_color: string | null;
     logo_file_id: string | null;
   }>(
-    `SELECT id, COALESCE(trade_name, legal_name) AS name, legal_name, rif, address, city, phones, email,
-            brand_color, logo_file_id
-       FROM companies WHERE id = $1`,
+    `SELECT c.id, COALESCE(c.trade_name, c.legal_name) AS name, c.legal_name, c.rif, k.tax_id_label, k.timezone,
+            c.address, c.city, c.phones, c.email, c.brand_color, c.logo_file_id
+       FROM companies c JOIN catalogs_countries k ON k.code = c.country_code WHERE c.id = $1`,
     [companyId]
   );
   if (!c) return null;
@@ -87,6 +93,8 @@ export async function companyBranding(companyId: string): Promise<Branding | nul
     name: c.name,
     legalName: c.legal_name,
     rif: c.rif,
+    taxIdLabel: c.tax_id_label,
+    timezone: c.timezone,
     address: c.address,
     city: c.city,
     phones: c.phones ?? [],

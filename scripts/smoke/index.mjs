@@ -17,6 +17,10 @@ import * as companies from "./companies.mjs";
 import * as files from "./files.mjs";
 import * as branding from "./branding.mjs";
 import * as pos from "./pos.mjs";
+import * as countries from "./countries.mjs";
+import * as rates from "./rates.mjs";
+import * as ticket from "./ticket.mjs";
+import * as einvoice from "./einvoice.mjs";
 import * as ratelimit from "./ratelimit.mjs";
 
 const SUITES = [
@@ -32,6 +36,10 @@ const SUITES = [
   ["Fase 11 · Archivos e imagen de producto", files],
   ["Fase 12 · Identidad de cada empresa", branding],
   ["Fase 13 · Punto de venta", pos],
+  ["Fase 15 · País de la empresa", countries],
+  ["Fase 16 · Tipos de cambio automáticos", rates],
+  ["Fase 17 · Ticket imprimible", ticket],
+  ["Fase 18 · Comprobantes electrónicos (CR)", einvoice],
   ["Límite por IP", ratelimit]
 ];
 

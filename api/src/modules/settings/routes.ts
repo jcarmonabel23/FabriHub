@@ -21,6 +21,7 @@ import { getCompany, updateCompany } from "./company.js";
 import { removeCompanyImage, setCompanyImage } from "./branding.js";
 import { rawUpload } from "../files/images.js";
 import { listParameters, listSequences, resetParameter, updateParameter, updateSequence } from "./parameters.js";
+import { deleteBccrToken, ratesStatus, runRatesNow, saveBccrToken } from "./exchangeRates.js";
 
 export const settingsRoutes = Router();
 
@@ -50,3 +51,9 @@ settingsRoutes.delete("/catalogs/:key/:id", catalogCan("delete"), deleteCatalogI
 settingsRoutes.get("/currencies/:id/rates", can("SET_COMMERCIAL", "view"), listRates);
 settingsRoutes.post("/currencies/:id/rates", can("SET_COMMERCIAL", "edit"), upsertRate);
 settingsRoutes.delete("/currencies/rates/:rateId", can("SET_COMMERCIAL", "delete"), deleteRate);
+
+// Tasas automáticas (fase 16): fuente oficial del país, «Actualizar ahora» y token del BCCR
+settingsRoutes.get("/exchange-rates", can("SET_COMMERCIAL", "view"), ratesStatus);
+settingsRoutes.post("/exchange-rates/run", can("SET_COMMERCIAL", "edit"), runRatesNow);
+settingsRoutes.put("/exchange-rates/token", can("SET_COMMERCIAL", "edit"), saveBccrToken);
+settingsRoutes.delete("/exchange-rates/token", can("SET_COMMERCIAL", "edit"), deleteBccrToken);

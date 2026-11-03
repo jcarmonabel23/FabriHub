@@ -15,6 +15,7 @@ echo "════════ Multiempresa"
 docker exec -i "${SMOKE_DB:-fabrihub-db}" psql -q -v ON_ERROR_STOP=1 -v app_user="$APP_DB_USER" \
   -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f - < scripts/smoke/tenant-isolation.sql
 
-MSYS_NO_PATHCONV=1 docker run --rm --network "${SMOKE_NETWORK:-fabrihub_red_app}" \
+# Alias smoke-runner: la API llega al servidor simulado de BCV/BCCR que levanta la suite de tasas (fase 16)
+MSYS_NO_PATHCONV=1 docker run --rm --network "${SMOKE_NETWORK:-fabrihub_red_app}" --network-alias smoke-runner \
   -e ADMIN_EMAIL="$ADMIN_EMAIL" -e ADMIN_INITIAL_PASSWORD="$ADMIN_INITIAL_PASSWORD" \
   -v "$(pwd)/scripts:/scripts:ro" node:22-alpine node /scripts/smoke/index.mjs

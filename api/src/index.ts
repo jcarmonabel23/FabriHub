@@ -20,6 +20,11 @@ import { HttpError } from "./lib/http.js";
 import { logger } from "./lib/logger.js";
 import { adminRoutes } from "./modules/admin/routes.js";
 import { startAlertScheduler } from "./modules/dashboard/alerts.js";
+import { startRatesScheduler } from "./modules/settings/exchangeRates.js";
+import { einvoiceRoutes } from "./modules/einvoice/routes.js";
+import { startEinvoiceQueue } from "./modules/einvoice/service.js";
+import { fiscalRoutes } from "./modules/fiscal/routes.js";
+import { startFiscalQueue } from "./modules/fiscal/service.js";
 import { notificationsRoutes } from "./modules/dashboard/notifications.js";
 import { dashboardRoutes } from "./modules/dashboard/routes.js";
 import { authRoutes } from "./modules/auth/routes.js";
@@ -87,6 +92,8 @@ v1.use("/production", productionRoutes);
 v1.use("/sales", salesRoutes);
 v1.use("/planning", planningRoutes);
 v1.use("/pos", posRoutes);
+v1.use("/einvoice", einvoiceRoutes);
+v1.use("/fiscal", fiscalRoutes);
 v1.use("/dashboard", dashboardRoutes);
 v1.use("/notifications", notificationsRoutes);
 app.use("/api/v1", v1);
@@ -148,6 +155,9 @@ bootstrap()
   .then(() => {
     app.listen(config.PORT, () => logger.info({ port: config.PORT, env: config.APP_ENVIRONMENT }, "[api] lista"));
     startAlertScheduler();
+    startRatesScheduler();
+    startEinvoiceQueue();
+    startFiscalQueue();
   })
   .catch((err) => {
     logger.fatal({ err }, "[api] no se pudo arrancar");

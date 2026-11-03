@@ -1,16 +1,33 @@
 /**
  * @project FabriHub - Front
  * @file src/app/pos/sales/components/SaleDoneModal.tsx
- * @description Venta confirmada: número de comprobante, vuelto a entregar y descarga del PDF
+ * @description Venta confirmada: número de comprobante, vuelto a entregar, ticket térmico (impreso solo
+ * si la caja lo pide) y PDF
  */
 
+import { useEffect, useRef } from "react";
 import { Button, Group, Modal, Stack, Text, ThemeIcon } from "@mantine/core";
 import { IconCheck } from "@tabler/icons-react";
+import { useQuery } from "@tanstack/react-query";
 import PdfButton from "@atoms/actions/PdfButton";
 import { fmtMoney } from "@utils/format";
+import TicketButtons, { usePrintTicket } from "../../components/ticket/TicketButtons";
+import { posApi } from "../../services/pos.service";
 import type { PosSale } from "../../types";
 
 export default function SaleDoneModal({ sale, onClose }: Readonly<{ sale: PosSale | null; onClose: () => void }>) {
+  const ticket = useQuery({ queryKey: ["pos", "ticket", sale?.id], queryFn: () => posApi.ticket(sale!.id), enabled: Boolean(sale) });
+  const print = usePrintTicket();
+  const autoPrinted = useRef<string | null>(null);
+
+  // Impresión automática (configurada en la caja): una sola vez por venta
+  useEffect(() => {
+    const t = ticket.data;
+    if (!sale || !t || !t.autoPrint || t.printCount > 0 || autoPrinted.current === sale.id) return;
+    autoPrinted.current = sale.id;
+    print.mutate(sale.id);
+  }, [sale, ticket.data, print]);
+
   return (
     <Modal opened={Boolean(sale)} onClose={onClose} withCloseButton={false} centered size="sm">
       {sale && (
@@ -35,15 +52,18 @@ export default function SaleDoneModal({ sale, onClose }: Readonly<{ sale: PosSal
               </Text>
             </div>
           )}
-          <Group mt="sm" grow w="100%">
-            <PdfButton size="sm" path={`/pos/sales/${sale.id}/pdf`} label="Comprobante" />
+          <TicketButtons saleId={sale.id} />
+          <Group mt="xs" grow w="100%">
+            <PdfButton size="sm" path={`/pos/sales/${sale.id}/pdf`} label="PDF" />
             <Button data-autofocus onClick={onClose}>
               Nueva venta
             </Button>
           </Group>
-          <Text size="xs" c="dimmed" ta="center">
-            El comprobante no es una factura fiscal.
-          </Text>
+          {ticket.data && (
+            <Text size="xs" c="dimmed" ta="center">
+              {ticket.data.legends.join(" ")}
+            </Text>
+          )}
         </Stack>
       )}
     </Modal>

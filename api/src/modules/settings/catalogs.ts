@@ -133,7 +133,8 @@ export const listRates = handler(
   { params: currencyParams, query: z.object({ limit: z.coerce.number().int().min(1).max(365).default(60) }) },
   ({ params, query: q }) =>
     query(
-      `SELECT r.id, r.rate_date AS "rateDate", r.rate::float AS rate, r.source, r.created_at AS "createdAt",
+      `SELECT r.id, r.rate_date AS "rateDate", r.rate::float AS rate, r.source, r.is_automatic AS "isAutomatic",
+              r.value_date AS "valueDate", r.created_at AS "createdAt",
               u.names AS "createdBy"
          FROM currencies_rates r LEFT JOIN users u ON u.id = r.created_by
         WHERE r.currency_id = $1
@@ -148,7 +149,7 @@ const rateBody = z.object({
   source: z.string().trim().max(60).optional()
 });
 
-/** Registra (o corrige) la tasa de un día: una tasa por moneda y fecha */
+/** Registra (o corrige) la tasa de un día: una tasa por moneda y fecha. Corregir una automática la vuelve manual */
 export const upsertRate = handler({ params: currencyParams, body: rateBody }, async ({ params, body, req }) => {
   if (params.id === (await baseCurrencyId())) {
     throw badRequest("BASE_CURRENCY", "La moneda base no lleva tasa: siempre vale 1");
@@ -162,7 +163,8 @@ export const upsertRate = handler({ params: currencyParams, body: rateBody }, as
     client.query(
       `INSERT INTO currencies_rates (currency_id, rate_date, rate, source, created_by)
        VALUES ($1, $2, $3, $4, fn_current_app_user())
-       ON CONFLICT (company_id, currency_id, rate_date) DO UPDATE SET rate = EXCLUDED.rate, source = EXCLUDED.source`,
+       ON CONFLICT (company_id, currency_id, rate_date) DO UPDATE
+          SET rate = EXCLUDED.rate, source = EXCLUDED.source, is_automatic = FALSE, value_date = NULL`,
       [params.id, body.rateDate, body.rate, body.source ?? null]
     )
   );

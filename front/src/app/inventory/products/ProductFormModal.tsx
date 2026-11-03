@@ -10,6 +10,7 @@ import { IconInfoCircle } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import FormModal from "@atoms/forms/FormModal";
 import { settingsApi } from "@/app/settings/services/settings.service";
+import { useCountry } from "@modules/country/country";
 import { notifyError, notifySuccess } from "@utils/notify";
 import ImageField from "@atoms/forms/ImageField";
 import { inventoryApi } from "../services/inventory.service";
@@ -39,6 +40,7 @@ type Form = {
   isOnHold: boolean;
   shelfLifeDays: number | string;
   fiscalTreatmentId: string | null;
+  cabysCode: string;
   salePrice: number | string;
   purchasePrice: number | string;
   standardCost: number | string;
@@ -68,12 +70,14 @@ const empty: Form = {
   isOnHold: false,
   shelfLifeDays: "",
   fiscalTreatmentId: null,
+  cabysCode: "",
   salePrice: "",
   purchasePrice: "",
   standardCost: ""
 };
 
 const BARCODE_RE = /^[0-9A-Za-z.-]{3,64}$/;
+const CABYS_RE = /^[0-9]{13}$/;
 
 const num = (v: number | string): number | null => (v === "" || v === null ? null : Number(v));
 
@@ -87,6 +91,7 @@ const useOptions = (catalog: string) =>
 
 export default function ProductFormModal({ opened, product, onClose }: Readonly<{ opened: boolean; product: ProductRow | null; onClose: () => void }>) {
   const qc = useQueryClient();
+  const country = useCountry();
   const [f, setF] = useState<Form>(empty);
   const types = useOptions("product-types");
   const families = useOptions("product-families");
@@ -108,7 +113,8 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
       ...empty,
       ...Object.fromEntries(Object.keys(empty).map((k) => [k, (product as unknown as Record<string, unknown>)[k] ?? (empty as Record<string, unknown>)[k]])),
       description: product.description ?? "",
-      barcode: product.barcode ?? ""
+      barcode: product.barcode ?? "",
+      cabysCode: product.cabysCode ?? ""
     } as Form);
   }, [opened, product]);
 
@@ -140,6 +146,7 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
         isOnHold: f.isOnHold,
         shelfLifeDays: num(f.shelfLifeDays),
         fiscalTreatmentId: f.fiscalTreatmentId,
+        ...(country.features.eInvoice ? { cabysCode: f.cabysCode.trim() || null } : {}),
         salePrice: num(f.salePrice),
         purchasePrice: num(f.purchasePrice),
         standardCost: num(f.standardCost)
@@ -181,7 +188,8 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
     f.name.trim().length >= 2 &&
     Boolean(f.productTypeId) &&
     Boolean(f.stockUnitId) &&
-    (!f.barcode.trim() || BARCODE_RE.test(f.barcode.trim()));
+    (!f.barcode.trim() || BARCODE_RE.test(f.barcode.trim())) &&
+    (!f.cabysCode.trim() || CABYS_RE.test(f.cabysCode.trim()));
   const hasHistory = Boolean(product && product.totalQuantity !== 0);
   const unitLabel = units.data?.find((u) => u.value === f.stockUnitId)?.label.split(" · ")[0] ?? "unidad de almacén";
 
@@ -290,6 +298,18 @@ export default function ProductFormModal({ opened, product, onClose }: Readonly<
             <NumberInput label="Costo estándar" min={0} decimalScale={6} decimalSeparator="," thousandSeparator="." value={f.standardCost} onChange={(v) => set("standardCost", v)} />
           </SimpleGrid>
           <Select mt="sm" label="Tratamiento fiscal" clearable searchable data={treatments.data ?? []} value={f.fiscalTreatmentId} onChange={(v) => set("fiscalTreatmentId", v)} />
+          {/* Costa Rica: el comprobante electrónico exige el CABYS en cada línea */}
+          {country.features.eInvoice && (
+            <TextInput
+              mt="sm"
+              label="Código CABYS"
+              description="13 dígitos del Catálogo de Bienes y Servicios de Hacienda; obligatorio para venderlo con comprobante electrónico"
+              maxLength={13}
+              value={f.cabysCode}
+              error={f.cabysCode && !CABYS_RE.test(f.cabysCode.trim()) ? "13 dígitos" : undefined}
+              onChange={(e) => set("cabysCode", e.currentTarget.value.replace(/[^0-9]/g, ""))}
+            />
+          )}
           <Text size="xs" c="dimmed" mt="xs">
             Precios de referencia en la moneda base; las listas de precios por cliente y proveedor llegan con Compras y Ventas.
           </Text>

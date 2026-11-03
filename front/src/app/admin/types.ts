@@ -138,9 +138,11 @@ export interface CompanyRow {
   code: string;
   legalName: string;
   tradeName: string | null;
+  idType: string;
   rif: string;
   isActive: boolean;
   city: string | null;
+  countryCode: string;
   country: string;
   email: string | null;
   baseCurrencyId: string;
@@ -153,9 +155,11 @@ export interface CompanyInput {
   code?: string;
   legalName: string;
   tradeName?: string | null;
+  idType?: string | null;
   rif: string;
   city?: string | null;
-  country?: string;
+  /** Solo al crear (VE, CR): el país no cambia después */
+  countryCode?: string;
   email?: string | null;
   baseCurrencyId: string;
   templateCompanyId?: string;

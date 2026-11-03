@@ -9,6 +9,7 @@ import type pg from "pg";
 import { config } from "../../config.js";
 import { one, query, runInCompany, type Db } from "../../db.js";
 import { hmac, otpCode, randomToken, safeEqualHex, sha256 } from "../../lib/crypto.js";
+import { countryByCode, type Country, type IdType } from "../../lib/taxId.js";
 import { sessionModules, type SessionModule } from "../../security/authorize.js";
 import { clientInfo } from "../../security/context.js";
 import { setRefreshCookie, signAccessToken } from "../../security/tokens.js";
@@ -45,6 +46,17 @@ export interface SessionCompany {
   brandColor: string | null;
   logo: { header: string; doc: string } | null;
   icon: { favicon: string; app: string } | null;
+  /** País (fase 15): etiqueta e identificaciones, moneda local, zona horaria y qué aplica */
+  country: {
+    code: string;
+    name: string;
+    taxIdLabel: string;
+    timezone: string;
+    currencyCode: string;
+    idTypes: IdType[];
+    features: Country["features"];
+  };
+  baseCurrencyCode: string;
 }
 
 export interface SessionPayload {
@@ -70,13 +82,42 @@ export function maskEmail(email: string): string {
 export async function sessionPayload(user: SessionUser, companyId: string | null): Promise<SessionPayload> {
   const flags = await one<{ is_platform_admin: boolean }>(`SELECT is_platform_admin FROM users WHERE id = $1`, [user.id]);
   const row = companyId
-    ? await one<{ id: string; code: string; name: string; logo_file_id: string | null; icon_file_id: string | null; brand_color: string | null }>(
-        `SELECT id, code, COALESCE(trade_name, legal_name) AS name, logo_file_id, icon_file_id, brand_color
-           FROM companies WHERE id = $1`,
+    ? await one<{
+        id: string;
+        code: string;
+        name: string;
+        logo_file_id: string | null;
+        icon_file_id: string | null;
+        brand_color: string | null;
+        country_code: string;
+        base_currency_code: string;
+      }>(
+        `SELECT c.id, c.code, COALESCE(c.trade_name, c.legal_name) AS name, c.logo_file_id, c.icon_file_id, c.brand_color,
+                c.country_code, cur.code AS base_currency_code
+           FROM companies c JOIN catalogs_currencies cur ON cur.id = c.base_currency_id WHERE c.id = $1`,
         [companyId]
       )
     : null;
-  const company: SessionCompany | null = row ? { id: row.id, code: row.code, name: row.name, ...brandingUrls(row) } : null;
+  let company: SessionCompany | null = null;
+  if (row) {
+    const k = await countryByCode(row.country_code);
+    company = {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      ...brandingUrls(row),
+      country: {
+        code: k.code,
+        name: k.name,
+        taxIdLabel: k.taxIdLabel,
+        timezone: k.timezone,
+        currencyCode: k.currencyCode,
+        idTypes: k.idTypes,
+        features: k.features
+      },
+      baseCurrencyCode: row.base_currency_code
+    };
+  }
   return {
     user: { ...user, isPlatformAdmin: flags?.is_platform_admin ?? false },
     company,

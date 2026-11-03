@@ -15,16 +15,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useSearchParams } from "react-router-dom";
 import PdfButton from "@atoms/actions/PdfButton";
+import TicketButtons from "../components/ticket/TicketButtons";
 import FormModal from "@atoms/forms/FormModal";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import { ApiError } from "@clients/apiClient";
 import { useCan } from "@modules/access-control/useCan";
+import { useCountry } from "@modules/country/country";
 import { fmtDateTime, fmtMoney } from "@utils/format";
 import { notifyError, notifySuccess } from "@utils/notify";
 import SupervisorFields, { SUPERVISOR_ERRORS, supervisorReady } from "../components/SupervisorFields";
 import { POS_ACTIONS } from "../posActions";
 import { posApi } from "../services/pos.service";
+import { EINV_STATUS } from "@/app/settings/einvoice/einvoice.service";
 import { PAYMENT_METHOD_LABEL, type PaymentMethod, type PosSale, type PosSaleRow, type SupervisorInput } from "../types";
 
 const methodsLabel = (m: string | null) => (m ? m.split(",").map((x) => PAYMENT_METHOD_LABEL[x as PaymentMethod] ?? x).join(", ") : "—");
@@ -109,6 +112,21 @@ function SaleDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: () =
               {s.voidAuthorizedBy && s.voidAuthorizedBy !== s.voidedByName ? ` (autorizó ${s.voidAuthorizedBy})` : ""}: {s.voidReason}
             </Alert>
           )}
+          {s.einvoices.length > 0 && (
+            <Stack gap={4}>
+              {s.einvoices.map((d) => (
+                <Group key={d.id} gap="xs" wrap="nowrap">
+                  <Badge color={EINV_STATUS[d.status].color} variant="light" miw={110}>
+                    {EINV_STATUS[d.status].label}
+                  </Badge>
+                  <Text size="sm">{d.docName}</Text>
+                  <Text size="xs" ff="monospace" c="dimmed">
+                    {d.consecutive}
+                  </Text>
+                </Group>
+              ))}
+            </Stack>
+          )}
           <Table withTableBorder fz="sm">
             <Table.Thead>
               <Table.Tr>
@@ -177,7 +195,8 @@ function SaleDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: () =
             </Text>
           )}
           <Group justify="flex-end">
-            <PdfButton size="sm" path={`/pos/sales/${s.id}/pdf`} label="Comprobante PDF" />
+            <TicketButtons saleId={s.id} />
+            <PdfButton size="sm" path={`/pos/sales/${s.id}/pdf`} label="PDF" />
             {s.status === "completed" && can("add_new") && (
               <Button size="sm" color="red" variant="light" leftSection={<IconBan size={16} />} onClick={() => setVoiding(s)}>
                 Anular
@@ -205,6 +224,7 @@ function Line({ label, value, strong }: Readonly<{ label: string; value: number;
 }
 
 export default function PosTicketsPage() {
+  const country = useCountry();
   const [params] = useSearchParams();
   const sessionId = params.get("session");
   const [search, setSearch] = useState("");
@@ -267,7 +287,7 @@ export default function PosTicketsPage() {
     <div className="p-6">
       <ModuleHeader title="Comprobantes" description={sessionId ? "Ventas del turno seleccionado" : "Ventas de mostrador: consulta, PDF y anulación"} actions={POS_ACTIONS} />
       <Group mb="md">
-        <TextInput placeholder="Comprobante, cliente o RIF" leftSection={<IconSearch size={16} />} w={320} value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
+        <TextInput placeholder={`Comprobante, cliente o ${country.taxIdLabel}`} leftSection={<IconSearch size={16} />} w={320} value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
         <Select
           placeholder="Estado"
           clearable

@@ -13,6 +13,7 @@ import type pg from "pg";
 import { one, query, withTx, type Db } from "../../db.js";
 import { badRequest, conflict, handler, idParams, notFound } from "../../lib/http.js";
 import { txCtx } from "../../security/context.js";
+import { assertTerminalIssuer } from "../fiscal/service.js";
 
 const terminalBody = z.object({
   code: z
@@ -31,6 +32,18 @@ const terminalBody = z.object({
     .regex(/^[A-Z0-9-]{0,10}$/, "Prefijo: letras, números o guion (máx. 10)")
     .optional(),
   ticketPadding: z.number().int().min(4).max(12).default(8),
+  /** Impresión del ticket (fase 17) */
+  ticketWidthMm: z.union([z.literal(58), z.literal(80)]).default(80),
+  ticketCopies: z.number().int().min(1).max(3).default(1),
+  autoPrint: z.boolean().default(false),
+  ticketFooter: z.string().trim().max(300).nullish(),
+  /** Costa Rica (fase 18): sucursal y terminal del consecutivo de Hacienda */
+  einvBranch: z.number().int().min(1).max(999).default(1),
+  einvTerminal: z.number().int().min(1).max(99999).default(1),
+  /** Venezuela (fase 19): emisor fiscal de la caja */
+  fiscalMode: z.enum(["none", "printer", "digital"]).default("none"),
+  fiscalAgentUrl: z.url({ protocol: /^https?$/ }).max(300).nullish(),
+  fiscalSerial: z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{3,30}$/, "Serial: letras, números o guion").nullish(),
   notes: z.string().trim().max(400).nullish(),
   isActive: z.boolean().default(true)
 });
@@ -39,6 +52,9 @@ const SELECT = `SELECT t.id, t.code, t.name, t.is_active AS "isActive", t.wareho
        t.price_list_id AS "priceListId", pl.code AS "priceListCode", pl.name AS "priceListName",
        t.default_customer_id AS "defaultCustomerId", c.legal_name AS "defaultCustomerName",
        t.ticket_prefix AS "ticketPrefix", t.ticket_padding AS "ticketPadding", t.next_ticket::int AS "nextTicket", t.notes,
+       t.ticket_width_mm AS "ticketWidthMm", t.ticket_copies AS "ticketCopies", t.auto_print AS "autoPrint", t.ticket_footer AS "ticketFooter",
+       t.einv_branch AS "einvBranch", t.einv_terminal AS "einvTerminal",
+       t.fiscal_mode AS "fiscalMode", t.fiscal_agent_url AS "fiscalAgentUrl", t.fiscal_serial AS "fiscalSerial",
        s.id AS "openSessionId", s.number AS "openSessionNumber", cu.names AS "openSessionCashier",
        t.updated_at AS "updatedAt"
   FROM pos_terminals t
@@ -86,11 +102,33 @@ function uniqueViolation(err: unknown): never {
 export const createTerminal = handler({ body: terminalBody }, async ({ body: b, req, res }) => {
   const id = await withTx(txCtx(req), async (client) => {
     await assertRefs(client, b);
+    await assertTerminalIssuer(client, b.fiscalMode);
     try {
       const row = await one<{ id: string }>(
-        `INSERT INTO pos_terminals (code, name, warehouse_id, price_list_id, default_customer_id, ticket_prefix, ticket_padding, notes, is_active, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, fn_current_app_user()) RETURNING id`,
-        [b.code, b.name, b.warehouseId, b.priceListId ?? null, b.defaultCustomerId ?? null, b.ticketPrefix ?? `${b.code}-`, b.ticketPadding, b.notes ?? null, b.isActive],
+        `INSERT INTO pos_terminals (code, name, warehouse_id, price_list_id, default_customer_id, ticket_prefix, ticket_padding, notes, is_active,
+                                    ticket_width_mm, ticket_copies, auto_print, ticket_footer, einv_branch, einv_terminal, fiscal_mode,
+                                    fiscal_agent_url, fiscal_serial, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, fn_current_app_user()) RETURNING id`,
+        [
+          b.code,
+          b.name,
+          b.warehouseId,
+          b.priceListId ?? null,
+          b.defaultCustomerId ?? null,
+          b.ticketPrefix ?? `${b.code}-`,
+          b.ticketPadding,
+          b.notes ?? null,
+          b.isActive,
+          b.ticketWidthMm,
+          b.ticketCopies,
+          b.autoPrint,
+          b.ticketFooter ?? null,
+          b.einvBranch,
+          b.einvTerminal,
+          b.fiscalMode,
+          b.fiscalAgentUrl ?? null,
+          b.fiscalSerial ?? null
+        ],
         client
       );
       return row!.id;
@@ -119,12 +157,35 @@ export const updateTerminal = handler({ params: idParams, body: terminalBody }, 
     const prefix = b.ticketPrefix ?? cur.ticket_prefix;
     if (cur.sold && prefix !== cur.ticket_prefix) throw conflict("PREFIX_LOCKED", "La caja ya emitió comprobantes: su prefijo no cambia");
     await assertRefs(client, b);
+    await assertTerminalIssuer(client, b.fiscalMode);
     try {
       await client.query(
         `UPDATE pos_terminals SET code = $2, name = $3, warehouse_id = $4, price_list_id = $5, default_customer_id = $6, ticket_prefix = $7,
-                ticket_padding = $8, notes = $9, is_active = $10, updated_by = fn_current_app_user()
+                ticket_padding = $8, notes = $9, is_active = $10, ticket_width_mm = $11, ticket_copies = $12, auto_print = $13,
+                ticket_footer = $14, einv_branch = $15, einv_terminal = $16, fiscal_mode = $17, fiscal_agent_url = $18,
+                fiscal_serial = $19, updated_by = fn_current_app_user()
           WHERE id = $1`,
-        [params.id, b.code, b.name, b.warehouseId, b.priceListId ?? null, b.defaultCustomerId ?? null, prefix, b.ticketPadding, b.notes ?? null, b.isActive]
+        [
+          params.id,
+          b.code,
+          b.name,
+          b.warehouseId,
+          b.priceListId ?? null,
+          b.defaultCustomerId ?? null,
+          prefix,
+          b.ticketPadding,
+          b.notes ?? null,
+          b.isActive,
+          b.ticketWidthMm,
+          b.ticketCopies,
+          b.autoPrint,
+          b.ticketFooter ?? null,
+          b.einvBranch,
+          b.einvTerminal,
+          b.fiscalMode,
+          b.fiscalAgentUrl ?? null,
+          b.fiscalSerial ?? null
+        ]
       );
     } catch (err) {
       uniqueViolation(err);

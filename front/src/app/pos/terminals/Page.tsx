@@ -16,6 +16,7 @@ import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import FormModal from "@atoms/forms/FormModal";
 import { useCan } from "@modules/access-control/useCan";
+import { useCountry } from "@modules/country/country";
 import { confirmDelete } from "@utils/confirm";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { settingsApi } from "@/app/settings/services/settings.service";
@@ -35,12 +36,19 @@ const EMPTY: PosTerminalInput = {
   defaultCustomerId: null,
   ticketPrefix: "",
   ticketPadding: 8,
+  ticketWidthMm: 80,
+  ticketCopies: 1,
+  autoPrint: false,
+  ticketFooter: null,
+  einvBranch: 1,
+  einvTerminal: 1,
   notes: null,
   isActive: true
 };
 
 function TerminalModal({ opened, terminal, onClose }: Readonly<{ opened: boolean; terminal: PosTerminal | null; onClose: () => void }>) {
   const qc = useQueryClient();
+  const country = useCountry();
   const [f, setF] = useState<PosTerminalInput>(EMPTY);
   const warehouses = useQuery({ queryKey: ["lookup", "warehouses"], queryFn: () => settingsApi.lookup("warehouses"), enabled: opened });
   const lists = useQuery({ queryKey: ["lookup", "sales-price-lists"], queryFn: () => settingsApi.lookup("sales-price-lists"), enabled: opened });
@@ -58,6 +66,12 @@ function TerminalModal({ opened, terminal, onClose }: Readonly<{ opened: boolean
             defaultCustomerId: terminal.defaultCustomerId,
             ticketPrefix: terminal.ticketPrefix,
             ticketPadding: terminal.ticketPadding,
+            ticketWidthMm: terminal.ticketWidthMm,
+            ticketCopies: terminal.ticketCopies,
+            autoPrint: terminal.autoPrint,
+            ticketFooter: terminal.ticketFooter,
+            einvBranch: terminal.einvBranch,
+            einvTerminal: terminal.einvTerminal,
             notes: terminal.notes,
             isActive: terminal.isActive
           }
@@ -67,7 +81,7 @@ function TerminalModal({ opened, terminal, onClose }: Readonly<{ opened: boolean
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { ...f, ticketPrefix: f.ticketPrefix || undefined, notes: f.notes || null };
+      const body = { ...f, ticketPrefix: f.ticketPrefix || undefined, ticketFooter: f.ticketFooter || null, notes: f.notes || null };
       return terminal ? posApi.updateTerminal(terminal.id, body) : posApi.createTerminal(body);
     },
     onSuccess: () => {
@@ -129,6 +143,55 @@ function TerminalModal({ opened, terminal, onClose }: Readonly<{ opened: boolean
         />
         <NumberInput label="Dígitos" min={4} max={12} value={f.ticketPadding} onChange={(v) => setF({ ...f, ticketPadding: Number(v) || 8 })} description={`Siguiente: ${preview}`} />
       </Group>
+      <Group grow align="flex-start">
+        <Select
+          label="Papel del ticket"
+          data={[
+            { value: "80", label: "80 mm" },
+            { value: "58", label: "58 mm" }
+          ]}
+          value={String(f.ticketWidthMm)}
+          onChange={(v) => setF({ ...f, ticketWidthMm: v === "58" ? 58 : 80 })}
+          allowDeselect={false}
+        />
+        <NumberInput label="Ejemplares" min={1} max={3} value={f.ticketCopies} onChange={(v) => setF({ ...f, ticketCopies: Math.min(3, Math.max(1, Number(v) || 1)) })} />
+      </Group>
+      <Switch
+        label="Imprimir el ticket al cobrar"
+        description="Abre la impresión apenas se confirma la venta (con Chrome en modo --kiosk-printing, sin diálogo)"
+        checked={f.autoPrint}
+        onChange={(e) => setF({ ...f, autoPrint: e.currentTarget.checked })}
+      />
+      <Textarea
+        label="Pie del ticket"
+        description="Opcional: política de cambios, redes sociales…"
+        autosize
+        minRows={1}
+        maxLength={300}
+        value={f.ticketFooter ?? ""}
+        onChange={(e) => setF({ ...f, ticketFooter: e.currentTarget.value })}
+      />
+      {/* Costa Rica: la caja forma parte del consecutivo de 20 dígitos del comprobante electrónico */}
+      {country.features.eInvoice && (
+        <Group grow align="flex-start">
+          <NumberInput
+            label="Sucursal (Hacienda)"
+            description={`Consecutivo: ${String(f.einvBranch).padStart(3, "0")}…`}
+            min={1}
+            max={999}
+            value={f.einvBranch}
+            onChange={(v) => setF({ ...f, einvBranch: Math.min(999, Math.max(1, Number(v) || 1)) })}
+          />
+          <NumberInput
+            label="Terminal (Hacienda)"
+            description={`Consecutivo: …${String(f.einvTerminal).padStart(5, "0")}…`}
+            min={1}
+            max={99999}
+            value={f.einvTerminal}
+            onChange={(v) => setF({ ...f, einvTerminal: Math.min(99999, Math.max(1, Number(v) || 1)) })}
+          />
+        </Group>
+      )}
       <Textarea label="Observaciones" autosize minRows={2} value={f.notes ?? ""} onChange={(e) => setF({ ...f, notes: e.currentTarget.value })} />
       <Switch label="Activa" checked={f.isActive} disabled={Boolean(terminal?.openSessionId)} onChange={(e) => setF({ ...f, isActive: e.currentTarget.checked })} />
     </FormModal>

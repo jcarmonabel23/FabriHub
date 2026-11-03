@@ -14,15 +14,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import ImageField from "@atoms/forms/ImageField";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
+import TaxIdInput from "@atoms/forms/TaxIdInput";
 import { refreshSession } from "@clients/apiClient";
 import { useCan } from "@modules/access-control/useCan";
+import { taxIdError, useCountry } from "@modules/country/country";
 import { fmtDateTime } from "@utils/format";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { settingsApi } from "../services/settings.service";
 import { SETTINGS_ACTIONS } from "../settingsActions";
 import type { Company } from "../types";
 
-const RIF_RE = /^[VEJPG]-\d{8}-\d$/;
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: dayjs().month(i).format("MMMM") }));
 
 type Form = Omit<Company, "baseCurrencyCode" | "updatedAt" | "logo" | "icon">;
@@ -33,6 +34,7 @@ export default function CompanyPage() {
   const qc = useQueryClient();
   const can = useCan("SET_COMPANY");
   const readOnly = !can("edit");
+  const country = useCountry();
   const company = useQuery({ queryKey: ["settings", "company"], queryFn: settingsApi.getCompany });
   const currencies = useQuery({ queryKey: ["lookup", "currencies"], queryFn: () => settingsApi.lookup("currencies") });
   const [form, setForm] = useState<Form | null>(null);
@@ -74,10 +76,10 @@ export default function CompanyPage() {
   }
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm({ ...form, [k]: v });
-  const rifOk = RIF_RE.test(form.rif.toUpperCase());
+  const rifOk = Boolean(form.rif.trim()) && !taxIdError(country, form.idType, form.rif);
   const colorOk = !form.brandColor || COLOR_RE.test(form.brandColor);
   const busy = (kind: ImageKind) => image.isPending && image.variables?.kind === kind;
-  const isPlaceholder = company.data.rif === "J-00000000-0";
+  const isPlaceholder = /^[A-Z]?-?0+-?0?$/.test(company.data.rif);
 
   return (
     <div className="p-6">
@@ -85,7 +87,7 @@ export default function CompanyPage() {
 
       {isPlaceholder && (
         <Alert color="orange" variant="light" icon={<IconAlertTriangle size={18} />} mb="md">
-          La empresa tiene datos provisionales. Complete la razón social y el RIF antes de emitir documentos.
+          La empresa tiene datos provisionales. Complete la razón social y la identificación fiscal ({country.taxIdLabel}) antes de emitir documentos.
         </Alert>
       )}
 
@@ -144,14 +146,13 @@ export default function CompanyPage() {
             <SimpleGrid cols={{ base: 1, md: 2 }}>
               <TextInput label="Razón social" required readOnly={readOnly} value={form.legalName} onChange={(e) => set("legalName", e.currentTarget.value)} />
               <TextInput label="Nombre comercial" readOnly={readOnly} value={form.tradeName ?? ""} onChange={(e) => set("tradeName", e.currentTarget.value)} />
-              <TextInput
-                label="RIF"
-                required
-                readOnly={readOnly}
-                placeholder="J-12345678-9"
+              <TaxIdInput
+                country={country}
+                idType={form.idType}
                 value={form.rif}
-                onChange={(e) => set("rif", e.currentTarget.value.toUpperCase())}
-                error={form.rif && !rifOk ? "Formato: letra (V, E, J, P o G), 8 dígitos y dígito verificador" : null}
+                disabled={readOnly}
+                required
+                onChange={(idType, rif) => setForm({ ...form, idType: idType ?? "", rif })}
               />
               <TextInput label="Correo" type="email" readOnly={readOnly} value={form.email ?? ""} onChange={(e) => set("email", e.currentTarget.value)} />
               <TagsInput
@@ -175,7 +176,7 @@ export default function CompanyPage() {
               <SimpleGrid cols={{ base: 1, md: 3 }}>
                 <TextInput label="Ciudad" readOnly={readOnly} value={form.city ?? ""} onChange={(e) => set("city", e.currentTarget.value)} />
                 <TextInput label="Estado" readOnly={readOnly} value={form.state ?? ""} onChange={(e) => set("state", e.currentTarget.value)} />
-                <TextInput label="País" required readOnly={readOnly} value={form.country} onChange={(e) => set("country", e.currentTarget.value)} />
+                <TextInput label="País" readOnly value={form.country} description="Se define al crear la empresa" />
               </SimpleGrid>
             </Stack>
           </Paper>
@@ -200,20 +201,25 @@ export default function CompanyPage() {
                 onChange={(v) => v && set("fiscalYearStartMonth", Number(v))}
                 readOnly={readOnly}
               />
-              <Switch
-                label="Contribuyente especial"
-                description="Designado por el SENIAT"
-                checked={form.isSpecialTaxpayer}
-                disabled={readOnly}
-                onChange={(e) => set("isSpecialTaxpayer", e.currentTarget.checked)}
-              />
-              <Switch
-                label="Agente de retención"
-                description="Retiene IVA/ISLR a sus proveedores al pagar"
-                checked={form.isWithholdingAgent}
-                disabled={readOnly}
-                onChange={(e) => set("isWithholdingAgent", e.currentTarget.checked)}
-              />
+              {/* Figuras que solo existen en algunos países (VE: SENIAT) */}
+              {country.features.specialTaxpayer && (
+                <Switch
+                  label="Contribuyente especial"
+                  description="Designado por el SENIAT"
+                  checked={form.isSpecialTaxpayer}
+                  disabled={readOnly}
+                  onChange={(e) => set("isSpecialTaxpayer", e.currentTarget.checked)}
+                />
+              )}
+              {country.features.withholdings && (
+                <Switch
+                  label="Agente de retención"
+                  description="Retiene IVA/ISLR a sus proveedores al pagar"
+                  checked={form.isWithholdingAgent}
+                  disabled={readOnly}
+                  onChange={(e) => set("isWithholdingAgent", e.currentTarget.checked)}
+                />
+              )}
             </SimpleGrid>
           </Paper>
 

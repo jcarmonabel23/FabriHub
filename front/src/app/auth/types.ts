@@ -31,6 +31,31 @@ export interface SessionCompany extends Partial<CompanyBranding> {
   id: string;
   code: string;
   name: string;
+  /** País (fase 15); las listas de empresas no lo traen */
+  country?: CompanyCountry;
+  baseCurrencyCode?: string;
+}
+
+/** Tipo de identificación fiscal de un país (el patrón se aplica al valor normalizado) */
+export interface IdType {
+  code: string;
+  name: string;
+  pattern: string;
+  example: string;
+  juridical: boolean;
+  /** Solo si se elige el tipo: su patrón es tan amplio que no se deduce del formato (extranjero en CR) */
+  explicitOnly?: boolean;
+}
+
+/** País de la empresa activa: etiqueta e identificaciones, moneda local, zona horaria y qué aplica */
+export interface CompanyCountry {
+  code: string;
+  name: string;
+  taxIdLabel: string;
+  timezone: string;
+  currencyCode: string;
+  idTypes: IdType[];
+  features: { igtf?: boolean; withholdings?: boolean; specialTaxpayer?: boolean; eInvoice?: boolean; fiscalDoc?: boolean };
 }
 
 /** Identidad de la empresa activa (URLs firmadas: vencen en horas y se renuevan con cada refresh) */

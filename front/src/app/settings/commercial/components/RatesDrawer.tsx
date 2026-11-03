@@ -5,7 +5,7 @@
  */
 
 import { useState } from "react";
-import { ActionIcon, Alert, Button, Drawer, Group, NumberInput, Stack, Table, Text, TextInput } from "@mantine/core";
+import { ActionIcon, Alert, Badge, Button, Drawer, Group, NumberInput, Stack, Table, Text, TextInput } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { IconInfoCircle, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,7 +21,7 @@ export default function RatesDrawer({ currency, baseCode, onClose }: Readonly<{ 
   const can = useCan("SET_COMMERCIAL");
   const [date, setDate] = useState<string | null>(dayjs().format("YYYY-MM-DD"));
   const [rate, setRate] = useState<number | string>("");
-  const [source, setSource] = useState("BCV");
+  const [source, setSource] = useState("Manual");
 
   const isBase = currency?.code === baseCode;
   const rates = useQuery({
@@ -55,7 +55,8 @@ export default function RatesDrawer({ currency, baseCode, onClose }: Readonly<{ 
       ) : (
         <Stack>
           <Text size="sm" c="dimmed">
-            Bolívares ({baseCode}) por 1 {currency?.code}. Se registra una tasa por día; registrar de nuevo el mismo día la corrige.
+            {baseCode} por 1 {currency?.code}. Se registra una tasa por día; registrar de nuevo el mismo día la corrige (y la consulta
+            automática ya no la reemplaza).
           </Text>
           {can("edit") && (
             <Group align="flex-end" grow>
@@ -90,7 +91,14 @@ export default function RatesDrawer({ currency, baseCode, onClose }: Readonly<{ 
                   <Table.Td ta="right" fw={600}>
                     {fmtMoney(r.rate, 4)}
                   </Table.Td>
-                  <Table.Td>{r.source ?? "—"}</Table.Td>
+                  <Table.Td>
+                    {r.source ?? "—"}
+                    {r.isAutomatic && (
+                      <Badge size="xs" variant="light" color="teal" ml={6}>
+                        automática
+                      </Badge>
+                    )}
+                  </Table.Td>
                   <Table.Td>
                     {can("delete") && (
                       <ActionIcon variant="subtle" color="red" aria-label="Eliminar tasa" onClick={() => remove.mutate(r.id)}>

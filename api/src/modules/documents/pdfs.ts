@@ -11,6 +11,7 @@
 
 import type { Response } from "express";
 import { handler, idParams } from "../../lib/http.js";
+import { currentCountry } from "../../lib/taxId.js";
 import { fmtDate, fmtMoney, fmtQty, renderPdf, type PdfColumn } from "../../lib/pdf.js";
 import { authOf } from "../../security/context.js";
 import { warehouseScope } from "../inventory/scope.js";
@@ -334,11 +335,14 @@ export const posTicketPdf = handler({ params: idParams }, async ({ params, req, 
     v.changeAmount ? `Vuelto: ${v.changeCurrencyCode ?? c} ${fmtMoney(v.changeInCurrency ?? v.changeAmount)}.` : null,
     v.voidReason ? `Anulada: ${v.voidReason}` : null,
     v.notes,
-    "Este comprobante no es una factura fiscal."
+    (await currentCountry()).code === "CR"
+      ? "Documento provisional: no sustituye al comprobante electrónico de Hacienda."
+      : "Este comprobante no es una factura fiscal."
   ].filter(Boolean);
 
+  const brand = await companyBranding(authOf(req).companyId);
   const pdf = await renderPdf({
-    brand: await companyBranding(authOf(req).companyId),
+    brand,
     title: "Comprobante de venta",
     number: v.ticketNumber,
     stamp: v.status === "voided" ? "ANULADA" : null,
@@ -349,7 +353,7 @@ export const posTicketPdf = handler({ params: idParams }, async ({ params, req, 
       lines: [v.customerAddress]
     },
     meta: [
-      ["Fecha", new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: "America/Caracas" }).format(new Date(v.soldAt))],
+      ["Fecha", new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: brand?.timezone ?? "America/Caracas" }).format(new Date(v.soldAt))],
       ["Caja", `${v.terminalCode} · ${v.terminalName}`],
       ["Turno", v.sessionNumber],
       ["Cajero", v.cashierName ?? "—"]

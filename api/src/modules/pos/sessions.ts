@@ -19,6 +19,7 @@ import { one, query, withTx, type Db } from "../../db.js";
 import { badRequest, conflict, forbidden, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
 import { authOf, txCtx } from "../../security/context.js";
 import { exchangeRate } from "../purchases/fiscal.js";
+import { pendingPrinterDocs } from "../fiscal/service.js";
 
 export const METHODS = ["cash", "card", "mobile", "transfer"] as const;
 export type PaymentMethod = (typeof METHODS)[number];
@@ -30,6 +31,8 @@ const ownerScope = (req: Request) => (req.modulePermissions?.includes("view_all"
 
 const HEADER = `SELECT s.id, s.number, s.status, s.terminal_id AS "terminalId", t.code AS "terminalCode", t.name AS "terminalName",
        t.warehouse_id AS "warehouseId", w.code AS "warehouseCode",
+       CASE WHEN fn_country_has('fiscalDoc') THEN t.fiscal_mode ELSE 'none' END AS "fiscalMode",
+       COALESCE(t.fiscal_agent_url, 'http://127.0.0.1:7788') AS "fiscalAgentUrl", t.fiscal_serial AS "fiscalSerial",
        s.cashier_id AS "cashierId", u.names AS "cashierName", s.opened_at AS "openedAt", s.closed_at AS "closedAt",
        cb.names AS "closedByName", s.sales_count AS "salesCount", s.sales_total::float AS "salesTotal",
        s.difference_total::float AS "differenceTotal", s.opening_notes AS "openingNotes", s.closing_notes AS "closingNotes"
@@ -154,7 +157,8 @@ export const mySession = handler({}, async ({ req }) => {
   );
   const settings = await one(
     `SELECT COALESCE((fn_parameter('POS', 'max_discount_pct'))::text::numeric, 0)::float AS "maxDiscountPct",
-            COALESCE((fn_parameter('POS', 'igtf_enabled'))::text::boolean, FALSE) AS "igtfEnabled",
+            -- El IGTF solo existe en Venezuela: en otro país el parámetro no tiene efecto
+            (COALESCE((fn_parameter('POS', 'igtf_enabled'))::text::boolean, FALSE) AND fn_country_has('igtf')) AS "igtfEnabled",
             COALESCE((fn_parameter('POS', 'igtf_rate'))::text::numeric, 0)::float AS "igtfRate"`
   );
   return { session: open ? await sessionDetail(open.id, null) : null, terminals, currencies, settings };
@@ -229,6 +233,11 @@ export const closeSession = handler({ params: idParams, body: closeBody }, async
     );
     if (!s || (scope && s.cashier_id !== scope)) throw notFound("Turno no encontrado");
     if (s.status !== "open") throw conflict("SESSION_CLOSED", `El turno ${s.number} ya está cerrado`);
+    // Venezuela: lo que la impresora fiscal no imprimió se imprime o se emite en contingencia antes de cerrar
+    const unprinted = await pendingPrinterDocs(params.id, client);
+    if (unprinted) {
+      throw conflict("FISCAL_PENDING", `Hay ${unprinted} documento(s) fiscal(es) sin imprimir en este turno: imprímalos o regístrelos en contingencia`);
+    }
 
     const expected = await sessionCounts(params.id, client);
     const declared = new Map(b.counts.map((c) => [`${c.method}:${c.currencyId}`, c.amount]));

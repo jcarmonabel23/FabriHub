@@ -15,6 +15,7 @@ import type {
   PosSaleRow,
   PosSession,
   PosSessionDetail,
+  PosTicket,
   PosTerminal,
   PosTerminalInput,
   Quote,
@@ -46,7 +47,7 @@ export const posApi = {
   // Venta
   catalog: (terminalId: string, search: string) => apiGet<CatalogItem[]>("/pos/catalog", { terminalId, search: search || undefined, limit: 60 }),
   searchCustomers: (search: string) => apiGet<PosCustomer[]>("/pos/customers", { search }),
-  createCustomer: (body: { rif: string; name: string; phone?: string | null; email?: string | null; address?: string | null }) =>
+  createCustomer: (body: { idType?: string | null; rif: string; name: string; phone?: string | null; email?: string | null; address?: string | null }) =>
     apiPost<PosCustomer>("/pos/customers", body),
   supervisors: () => apiGet<{ id: string; names: string; hasPin: boolean }[]>("/pos/supervisors"),
   quote: (body: QuoteInput) => apiPost<Quote>("/pos/sales/quote", body),
@@ -55,5 +56,8 @@ export const posApi = {
   // Comprobantes
   listSales: (q: Query) => apiGet<Paged<PosSaleRow>>("/pos/sales", q),
   getSale: (id: string) => apiGet<PosSale>(`/pos/sales/${id}`),
+  /** Ticket térmico: vista previa (sin registrar) y registro de una impresión (original / COPIA) */
+  ticket: (id: string) => apiGet<PosTicket>(`/pos/sales/${id}/ticket`),
+  printTicket: (id: string) => apiPost<PosTicket>(`/pos/sales/${id}/print`),
   voidSale: (id: string, reason: string, supervisor: SupervisorInput | null) => apiPost<PosSale>(`/pos/sales/${id}/void`, { reason, supervisor })
 };

@@ -37,23 +37,26 @@ import DataTable from "@atoms/tables/DataTable";
 import { ADMIN_ACTIONS } from "@admin/adminActions";
 import { adminApi } from "@admin/services/admin.service";
 import type { CompanyInput, CompanyRow } from "@admin/types";
+import TaxIdInput from "@atoms/forms/TaxIdInput";
+import type { CompanyCountry } from "@auth/types";
 import { coreAuth } from "@auth/store/coreAuth";
 import { useCan } from "@modules/access-control/useCan";
+import { taxIdError } from "@modules/country/country";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { fmtDateTime } from "@utils/format";
 import { notifyError, notifySuccess } from "@utils/notify";
 
 const MODULE_CODE = "ADM_COMPANIES";
-const RIF_RE = /^[VEJPG]-\d{8}-\d$/;
 const CODE_RE = /^[A-Z0-9_-]{2,20}$/;
 
 const EMPTY: CompanyInput & { code: string } = {
   code: "",
   legalName: "",
   tradeName: "",
+  idType: null,
   rif: "",
   city: "",
-  country: "Venezuela",
+  countryCode: "VE",
   email: "",
   baseCurrencyId: ""
 };
@@ -61,6 +64,7 @@ const EMPTY: CompanyInput & { code: string } = {
 function CompanyModal({ opened, company, onClose }: Readonly<{ opened: boolean; company: CompanyRow | null; onClose: () => void }>) {
   const qc = useQueryClient();
   const currencies = useQuery({ queryKey: ["lookup", "currencies"], queryFn: () => settingsApi.lookup("currencies"), enabled: opened });
+  const countries = useQuery({ queryKey: ["lookup", "countries"], queryFn: () => settingsApi.lookup("countries"), enabled: opened });
   const [form, setForm] = useState(EMPTY);
   const [adminEmail, setAdminEmail] = useState("");
   const [adminNames, setAdminNames] = useState("");
@@ -74,9 +78,10 @@ function CompanyModal({ opened, company, onClose }: Readonly<{ opened: boolean; 
             code: company.code,
             legalName: company.legalName,
             tradeName: company.tradeName ?? "",
+            idType: company.idType,
             rif: company.rif,
             city: company.city ?? "",
-            country: company.country,
+            countryCode: company.countryCode,
             email: company.email ?? "",
             baseCurrencyId: company.baseCurrencyId
           }
@@ -88,10 +93,10 @@ function CompanyModal({ opened, company, onClose }: Readonly<{ opened: boolean; 
 
   const save = useMutation({
     mutationFn: () => {
-      const { code, ...fields } = form;
+      const { code, countryCode, ...fields } = form;
       if (company) return adminApi.updateCompany(company.id, fields);
       const admin = adminEmail.trim() ? { email: adminEmail.trim().toLowerCase(), names: adminNames.trim() || undefined } : undefined;
-      return adminApi.createCompany({ ...fields, code, admin });
+      return adminApi.createCompany({ ...fields, code, countryCode, admin });
     },
     onSuccess: () => {
       notifySuccess(company ? "Empresa actualizada" : "Empresa creada. Cámbiese a ella desde la cabecera para configurarla.");
@@ -102,9 +107,17 @@ function CompanyModal({ opened, company, onClose }: Readonly<{ opened: boolean; 
     onError: (err) => notifyError(err)
   });
 
+  // El catálogo trae lo necesario para validar la identificación del país elegido
+  const country = (countries.data ?? []).find((c) => c.code === form.countryCode) as unknown as CompanyCountry | undefined;
+  const pickCountry = (code: string | null) => {
+    const c = (countries.data ?? []).find((x) => x.code === code);
+    if (!c) return;
+    const currency = (currencies.data ?? []).find((x) => x.code === c.currencyCode);
+    set({ countryCode: c.code, idType: null, rif: "", baseCurrencyId: currency?.id ?? form.baseCurrencyId });
+  };
   const valid =
     form.legalName.trim().length >= 3 &&
-    RIF_RE.test(form.rif) &&
+    Boolean(country && form.rif.trim() && !taxIdError(country, form.idType ?? null, form.rif)) &&
     Boolean(form.baseCurrencyId) &&
     (company || CODE_RE.test(form.code));
 
@@ -120,23 +133,24 @@ function CompanyModal({ opened, company, onClose }: Readonly<{ opened: boolean; 
             value={form.code}
             onChange={(e) => set({ code: e.currentTarget.value.toUpperCase() })}
           />
-          <TextInput
-            label="RIF"
-            description="J-12345678-9"
+          <Select
+            label="País"
+            description={company ? "No se puede cambiar" : "Define impuestos, identificación, moneda y hora"}
             required
-            value={form.rif}
-            error={form.rif && !RIF_RE.test(form.rif) ? "Formato inválido" : undefined}
-            onChange={(e) => set({ rif: e.currentTarget.value.toUpperCase() })}
+            disabled={Boolean(company)}
+            data={(countries.data ?? []).map((c) => ({ value: c.code, label: c.name }))}
+            value={form.countryCode ?? null}
+            onChange={pickCountry}
           />
         </Group>
+        {country && <TaxIdInput country={country} idType={form.idType ?? null} value={form.rif} required onChange={(idType, rif) => set({ idType, rif })} />}
         <TextInput label="Razón social" required value={form.legalName} onChange={(e) => set({ legalName: e.currentTarget.value })} />
         <TextInput label="Nombre comercial" value={form.tradeName ?? ""} onChange={(e) => set({ tradeName: e.currentTarget.value })} />
         <Group grow>
           <TextInput label="Ciudad" value={form.city ?? ""} onChange={(e) => set({ city: e.currentTarget.value })} />
-          <TextInput label="País" value={form.country ?? ""} onChange={(e) => set({ country: e.currentTarget.value })} />
+          <TextInput label="Correo" type="email" value={form.email ?? ""} onChange={(e) => set({ email: e.currentTarget.value })} />
         </Group>
         <Group grow>
-          <TextInput label="Correo" type="email" value={form.email ?? ""} onChange={(e) => set({ email: e.currentTarget.value })} />
           <Select
             label="Moneda base"
             required
@@ -372,7 +386,7 @@ export default function CompaniesAdminPage() {
               )}
             </Text>
             <Text size="xs" c="dimmed">
-              {c.code} · {c.rif}
+              {c.code} · {c.countryCode} · {c.rif}
               {c.tradeName ? ` · ${c.legalName}` : ""}
             </Text>
           </div>

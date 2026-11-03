@@ -13,6 +13,7 @@
 import { Router } from "express";
 import { requirePermission as can } from "../../security/authorize.js";
 import { posTicketPdf } from "../documents/pdfs.js";
+import { getTicket, printTicket } from "./ticket.js";
 import { createSale, getSale, listSales, posCatalog, quickCreateCustomer, quoteSale, searchCustomers, voidSale } from "./sales.js";
 import { closeSession, getSession, listSessions, mySession, openSession } from "./sessions.js";
 import { listSupervisors, setMyPin } from "./supervisor.js";
@@ -45,4 +46,7 @@ posRoutes.post("/sales", can("POS_SALES", "add_new"), createSale);
 posRoutes.get("/sales", can("POS_SALES", "view"), listSales);
 posRoutes.get("/sales/:id", can("POS_SALES", "view"), getSale);
 posRoutes.get("/sales/:id/pdf", can("POS_SALES", "view"), posTicketPdf);
+// Ticket térmico (fase 17): vista previa y registro de cada impresión (original / COPIA)
+posRoutes.get("/sales/:id/ticket", can("POS_SALES", "view"), getTicket);
+posRoutes.post("/sales/:id/print", can("POS_SALES", "view"), printTicket);
 posRoutes.post("/sales/:id/void", can("POS_SALES", "add_new"), voidSale);

@@ -24,6 +24,7 @@ import AuditAdminPage from "@admin/audit/Page";
 import CompaniesAdminPage from "@admin/companies/Page";
 import ModuleHubPage from "@/app/hub/ModuleHubPage";
 import CompanyPage from "@/app/settings/company/Page";
+import EinvoicePage from "@/app/settings/einvoice/Page";
 import ParametersPage from "@/app/settings/parameters/Page";
 import CommercialCatalogsPage from "@/app/settings/commercial/Page";
 import TaxesPage from "@/app/taxes/taxes/Page";
@@ -116,6 +117,7 @@ export default function AppRouter() {
           {/* Parámetros del sistema (fase 2) */}
           <Route element={<ProtectedModuleRoute moduleCode="SET_COMPANY" />}>
             <Route path="/settings/company" element={<CompanyPage />} />
+            <Route path="/settings/einvoice" element={<EinvoicePage />} />
           </Route>
           <Route element={<ProtectedModuleRoute moduleCode="SET_PARAMETERS" />}>
             <Route path="/settings/parameters" element={<ParametersPage />} />

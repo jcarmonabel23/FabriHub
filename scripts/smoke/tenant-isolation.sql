@@ -16,8 +16,8 @@ BEGIN;
 -- --------------------------------------------------------------- Datos de la empresa B (como dueño)
 SELECT id AS company_a FROM companies WHERE code = 'PRINCIPAL' \gset
 
-INSERT INTO companies (code, legal_name, rif, base_currency_id)
-SELECT 'PRUEBA_B', 'Empresa de prueba B', 'J-99999999-9', base_currency_id FROM companies WHERE code = 'PRINCIPAL'
+INSERT INTO companies (code, legal_name, id_type, rif, country_code, base_currency_id)
+SELECT 'PRUEBA_B', 'Empresa de prueba B', 'RIF', 'J-99999999-9', 'VE', base_currency_id FROM companies WHERE code = 'PRINCIPAL'
 RETURNING id AS company_b \gset
 
 -- Mismos códigos que en A: los únicos son por empresa

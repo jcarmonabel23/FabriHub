@@ -385,6 +385,130 @@ actividades de manufactura", 4.2.1). Si el tiempo aprieta, la fase 7 puede hacer
     arqueo por medio y moneda, «Ver sus ventas» y cierre (efectivo a contar; medios electrónicos precargados con lo esperado).
   - `ModuleHeader` resalta la acción más específica que coincide con la ruta.
 
+### 10.2 Ampliación: Costa Rica, tipos de cambio automáticos y documento fiscal del POS
+
+Objetivo: que una empresa pueda operar en **Venezuela o Costa Rica**, con su moneda, impuestos,
+identificación fiscal y tipo de cambio oficial, y que el punto de venta emita el documento que exige
+cada país. Plan acordado por etapas; cada etapa se entrega probada (smoke + navegador) antes de la siguiente.
+
+| Fase | Contenido | Estado |
+|---|---|---|
+| **15. País de la empresa** | Catálogo de países con su configuración fiscal; colón (CRC); impuestos, tratamientos y retenciones por país; identificación fiscal por país; zona horaria por empresa | Terminada |
+| **16. Tipos de cambio automáticos** | Proveedores de tasa (BCCR y BCV) detrás de una interfaz común, tarea diaria por empresa, historial con fuente, carga manual de respaldo | Terminada |
+| **17. Ticket imprimible del POS** | Ticket térmico de 58/80 mm desde la caja (impresión del navegador), plantilla por país, reimpresión marcada «COPIA» | Terminada |
+| **18. Costa Rica: comprobantes electrónicos 4.4** | Tiquete y factura electrónica: CABYS, clave y consecutivo, XML 4.4 firmado, envío y consulta a Hacienda, nota de crédito para anular | Terminada (sandbox simulado; falta probar con credenciales reales) |
+| **19. Venezuela: documento fiscal** | Emisor fiscal intercambiable: impresora fiscal homologada (agente local) o imprenta digital (API), con contingencia; nota de crédito para anular | En curso (API, migración y simuladores listos; faltan pantallas y prueba de humo) |
+
+- **Fase 15 (país):**
+  - `catalogs_countries` (global): `VE`, `CR` con moneda por defecto, zona horaria (`America/Caracas`,
+    `America/Costa_Rica`), tipos de identificación y banderas de lo que aplica en cada país
+    (IGTF, retenciones de IVA/ISLR, comprobante electrónico).
+  - `companies.country_code` reemplaza el texto libre `country`; clientes y proveedores también.
+  - Hoy son globales y venezolanos: impuestos (`taxes`, `taxes_rates`), retenciones (`withholdings*`) y
+    tratamientos fiscales. Llevan `country_code`; cada empresa solo ve los de su país.
+  - Costa Rica: IVA general 13 % y tarifas reducidas 4 %, 2 %, 1 % y 0 %, más exento. No hay IGTF ni
+    retenciones de IVA al estilo venezolano: el POS y las compras las activan según el país.
+  - Identificación: hoy un `CHECK` de RIF (`^[VEJPG]-…`) en empresas, clientes y proveedores. Pasa a
+    `id_type` + `id_number` validados por país (VE: RIF y cédula; CR: física 9 dígitos, jurídica 10,
+    DIMEX 11–12, NITE 10, extranjero). Etiquetas «RIF» / «Cédula» en pantallas, PDF y Excel.
+  - Moneda **CRC** (colón, ₡, 2 decimales). La moneda base de una empresa de CR es CRC.
+  - **Zona horaria por empresa:** hoy «hoy» se calcula con `CURRENT_DATE` en la zona de la BD (Caracas).
+    Costa Rica va 2 horas atrás; sin esto, una venta a las 11 p. m. en CR caería en el día siguiente.
+  - Empresa demo de Costa Rica para las pruebas (smoke de aislamiento por país).
+  - **Hecho (2026-11-03, migración `20261103_1501_countries`):** `catalogs_countries` con tipos de
+    identificación (patrón, ejemplo, `explicitOnly` para el extranjero de CR, que no se deduce del formato)
+    y banderas (`igtf`, `withholdings`, `specialTaxpayer`, `eInvoice`). Se conservó la columna `rif` como
+    número de identificación genérico (VARCHAR 20) con `id_type`; el trigger `fn_check_tax_id` valida contra
+    el país. Impuestos, retenciones y tratamientos con `country_code` + política RLS `p_country`; triggers
+    impiden usar tratamientos de otro país. `db.ts` fija `TimeZone` por empresa en cada consulta y
+    transacción. IGTF condicionado por `fn_country_has('igtf')`. Front: `TaxIdInput` (tipo + número,
+    detecta el tipo y normaliza), país elegido al crear la empresa (fijo después), etiquetas por país.
+    Smoke `countries.mjs` (26 verificaciones); batería completa 529/529. Falta desplegar en producción
+    (respaldo previo de la BD).
+- **Fase 16 (tipos de cambio):**
+  - Interfaz `RateProvider` (`fetch(fecha) → [{moneda, tasa, fuente}]`) y una tarea diaria por empresa
+    (`runInCompany`) según su país. Botón «Actualizar ahora» y alerta si la consulta falla.
+  - **BCCR:** API REST SDDE, `https://apim.bccr.fi.cr/SDDE/api/Bccr.GE.SDDE.Publico.Indicadores.API`,
+    `GET /indicadoresEconomicos/{codigo}/series?fechaInicio=yyyy/mm/dd&fechaFin=…&idioma=ES` con
+    `Authorization: Bearer <token>`. El token se genera registrándose en el sitio de Indicadores
+    Económicos (Mi Perfil → Generar token); se guarda cifrado por empresa. Indicadores 317 (compra) y
+    318 (venta) colón/dólar, a confirmar en el catálogo oficial. El servicio SOAP anterior
+    (`wsindicadoreseconomicos.asmx`) fue sustituido por el SDDE.
+  - **BCV:** no publica una API oficial. Opciones: leer la tasa de la página oficial `bcv.org.ve`
+    (frágil si cambian el HTML) o un servicio de terceros. Se implementa la lectura de la página oficial
+    con validaciones (rango razonable, fecha valor) y la carga manual queda como respaldo.
+  - `currencies_rates.source` registra la fuente (`BCCR`, `BCV`, `MANUAL`) y la fecha valor.
+  - **Hecho (2026-11-03, migración `20261104_1601_exchange_rates`):** `catalogs_countries.rate_provider`
+    (VE → BCV, CR → BCCR); `currencies_rates.is_automatic` + `value_date` (una tasa manual nunca se pisa;
+    corregir a mano una automática la vuelve manual); bitácora `exchange_rate_runs`; `company_secrets` con el
+    token del BCCR cifrado AES-256-GCM (`SECRETS_KEY`, o derivada de `JWT_ACCESS_SECRET`). Parámetros SETTINGS:
+    `rates_auto_enabled` (apagado de fábrica), `rates_interval_hours` (4) y `rates_bccr_side` (venta 318 /
+    compra 317; solo se lista en CR gracias a `rules.countries`). La tarea revisa cada 10 min y reintenta a la
+    hora tras un error; alerta `RATES_FAILED`. Las cotizaciones se convierten a la moneda base de la empresa.
+    El BCV envía su certificado sin el intermedio: `lib/httpFetch.ts` lo descarga desde la extensión AIA y valida
+    contra las raíces del sistema (sin desactivar la verificación). Probado en vivo contra bcv.org.ve; el BCCR,
+    con un servidor simulado (falta el token real). Front: panel «Tasas automáticas» en Monedas. Smoke
+    `rates.mjs` (29 verificaciones); batería 557/557. El cliente de humo reintenta tras el límite general
+    (600/min).
+- **Fase 17 (ticket imprimible):**
+  - Vista de ticket de 58/80 mm con CSS de impresión (`@page`), sin depender de controladores: imprime
+    en cualquier impresora térmica instalada. Configuración por caja (ancho, copias, impresión automática).
+  - Plantilla por país: datos fiscales del emisor y del cliente, desglose de impuestos, pagos, vuelto,
+    y las leyendas que exija cada régimen (en VE, «no es factura fiscal» mientras no haya emisor fiscal).
+  - **Hecho (2026-11-03, migración `20261105_1701_pos_ticket_print`):** por caja, `ticket_width_mm` (58/80),
+    `ticket_copies` (1–3), `auto_print` y `ticket_footer`; bitácora `pos_sales_prints` (la 1.ª impresión es el
+    original, las siguientes salen «COPIA»; sin UPDATE/DELETE para la app). API `GET /pos/sales/:id/ticket`
+    (vista previa) y `POST /pos/sales/:id/print` (registra y devuelve el ticket), en `api/src/modules/pos/ticket.ts`,
+    con leyendas por país (VE: «no es factura fiscal»; CR: «documento provisional», no sustituye al comprobante
+    de Hacienda) y marcas de alícuota (VE: G/R/A/E; CR: 13%/E). Front: plantilla HTML con `@page` en
+    `app/pos/components/ticket/ticketHtml.ts`, impresa por un iframe oculto; botones Imprimir/Ver en «Venta
+    registrada» y en Comprobantes; impresión automática si la caja lo pide (sin diálogo: Chrome con
+    `--kiosk-printing`). El PDF del comprobante también usa la leyenda del país. Smoke `ticket.mjs`
+    (24 verificaciones, incluida una venta en Costa Rica); batería 581/581. Vista previa revisada en el navegador.
+- **Fase 18 (Costa Rica, comprobantes electrónicos):**
+  - Versión **4.4** obligatoria desde el 1 de septiembre de 2025 (Resolución MH-DGT-RES-0027-2024).
+    En CR no se usan impresoras fiscales: el POS emite un **tiquete electrónico** (consumidor final) o una
+    **factura electrónica** (cliente identificado) y el papel es solo su representación impresa.
+  - Datos nuevos: código **CABYS** por producto, actividad económica de la empresa, sucursal y terminal
+    por caja, condición de venta, medio de pago con los códigos de Hacienda.
+  - Clave numérica de 50 dígitos y consecutivo de 20 (sucursal + terminal + tipo + número).
+  - XML 4.4 firmado (XAdES-EPES) con la llave criptográfica (.p12) de la empresa; token OAuth del
+    IdP de Hacienda; envío a la API de recepción y consulta del estado (aceptado / rechazado).
+    Primero en el ambiente de pruebas (sandbox).
+  - Cola de envío con reintentos y modo contingencia; una venta no se anula: se emite **nota de crédito**.
+  - El código QR en la representación impresa está suspendido; se imprime la clave y el consecutivo.
+  - **Hecho (2026-11-03, migración `20261106_1801_cr_einvoice`):** `products.cabys_code`, `catalogs_units.hacienda_code`,
+    sucursal/terminal por caja (`einv_branch`, `einv_terminal`), `einvoice_settings` (actividad, ubicación, ambiente,
+    contingencia), `einvoice_sequences` y `einvoice_documents` (cola: pending → sent → accepted/rejected; cancelled).
+    Módulo `api/src/modules/einvoice/`: `xml.ts` escribe el XML 4.4 ya canónico (C14N); `signer.ts` firma XAdES-EPES
+    (RSA-SHA256, 3 referencias SHA-256, política del Anexo 2 v4.4 con su SHA-256 verificado contra el PDF oficial) leyendo
+    el .p12 con node-forge 1.4.0; `hacienda.ts` (token del IdP `rut-stag`/`rut`, recepción `recepcion-sandbox/v1` y
+    `recepcion/v1`); `service.ts` reserva clave y consecutivo en la transacción de la venta, nota de crédito (código 01)
+    al anular, cola con reintentos crecientes cada minuto, contingencia (situación 3). Credenciales del ATV y llave .p12
+    + PIN cifradas en `company_secrets`. Alerta `EINV_FAILED`. Ticket: tipo, consecutivo, clave y estado. Front:
+    Configuración → Comprobantes (solo países con `eInvoice`), CABYS en el producto, sucursal/terminal en la caja.
+    Validación: XML de TE/FE/NC validan contra los XSD oficiales (xmllint) y la firma verifica con xmlsec1. Smoke
+    `einvoice.mjs` (51 verificaciones con Hacienda simulado y llave de prueba autofirmada); batería 632/632.
+    Corregido de paso: el PATCH parcial de productos pisaba campos no enviados con los valores por defecto.
+- **Fase 19 (Venezuela, documento fiscal):**
+  - Marco cambiante: la Providencia **SNAT/2026/00093** (G. O. 43.484, 21/10/2026) hace **opcional** la
+    máquina fiscal y admite medios digitales (portal/app del SENIAT, imprentas digitales, proveedores
+    autorizados); rige a los 180 días (≈ abril 2027). La SNAT/2026/00084 derogó la homologación de
+    sistemas de facturación (SNAT/2024/000121). Hasta entonces sigue el régimen de máquinas fiscales.
+  - Diseño: interfaz `FiscalIssuer` por caja con implementaciones
+    1. **Sin emisor** (comprobante no fiscal, como hoy);
+    2. **Impresora fiscal homologada**: el navegador no habla con el puerto serie; se necesita un
+       **agente local** en la PC de la caja que traduzca la venta al protocolo del fabricante y devuelva
+       el número fiscal (factura y reporte Z);
+    3. **Imprenta digital**: la API del proveedor autorizado asigna el número de control y devuelve el PDF.
+  - Contingencia: formato físico y registro posterior, como prevé la providencia.
+  - Anulación con **nota de crédito** fiscal; el IGTF se mantiene en el documento.
+
+**Decisiones pendientes del usuario (antes de la fase indicada):**
+- Fase 16: registrarse en el sitio de Indicadores Económicos del BCCR, generar el token y cargarlo en Catálogos comerciales → Monedas (lo hace el titular; sin él, Costa Rica queda con carga manual).
+- Fase 18: credenciales del ambiente de pruebas de Hacienda (usuario ATV de pruebas y llave .p12 con su PIN), la actividad económica inscrita y la ubicación (provincia/cantón/distrito) para probar contra el sandbox real; luego pasar a producción.
+- Fase 19: ¿impresora fiscal (marca y modelo disponibles) o imprenta digital (qué proveedor)?
+
 Existe un borrador anterior en `C:\Workspace\Proyecto\fabrihub`. Su lógica SQL de dominio
 (explosión, MRP y trigger de movimientos, en esquemas en español) **se reutiliza al portarla** a las
 convenciones de este plan. Su seguridad (`rol_permiso`) y su front (HTML estático) **se reemplazan**

@@ -7,7 +7,7 @@
 import { apiDownload, apiGet, apiPost } from "@clients/apiClient";
 
 export type Severity = "info" | "warning" | "critical";
-export type AlertKind = "STOCK_MIN" | "STOCK_MAX" | "LOT_EXPIRING" | "LOT_EXPIRED" | "QC_PENDING" | "PO_OVERDUE" | "PRO_LATE" | "SO_LATE";
+export type AlertKind = "STOCK_MIN" | "STOCK_MAX" | "LOT_EXPIRING" | "LOT_EXPIRED" | "QC_PENDING" | "PO_OVERDUE" | "PRO_LATE" | "SO_LATE" | "RATES_FAILED" | "EINV_FAILED" | "FISCAL_PENDING";
 
 export const KIND_LABEL: Record<AlertKind, string> = {
   STOCK_MIN: "Stock bajo el mínimo",
@@ -17,7 +17,10 @@ export const KIND_LABEL: Record<AlertKind, string> = {
   QC_PENDING: "Cuarentena prolongada",
   PO_OVERDUE: "OC atrasada",
   PRO_LATE: "OP atrasada",
-  SO_LATE: "OV atrasada"
+  SO_LATE: "OV atrasada",
+  RATES_FAILED: "Tasa de cambio sin actualizar",
+  EINV_FAILED: "Comprobantes electrónicos con problemas",
+  FISCAL_PENDING: "Documentos fiscales pendientes"
 };
 
 export const SEVERITY_LABEL: Record<Severity, string> = { critical: "Crítica", warning: "Advertencia", info: "Aviso" };

@@ -10,6 +10,7 @@
 import { z } from "zod";
 import { one, query, withTx } from "../../db.js";
 import { conflict, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
+import { currentCountry, normalizeTaxId } from "../../lib/taxId.js";
 import { txCtx } from "../../security/context.js";
 
 const optText = (max: number) =>
@@ -24,18 +25,16 @@ const optId = z.uuid().nullish();
 const fields = {
   legalName: z.string().trim().min(3).max(160),
   tradeName: optText(120),
-  rif: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[VEJPG]-\d{8}-\d$/, "Formato de RIF: J-12345678-9"),
+  /** Tipo de identificación del país (RIF, CI, FISICA, JURIDICA…); sin él se deduce del formato */
+  idType: z.string().trim().toUpperCase().max(12).nullish(),
+  rif: z.string().trim().min(3).max(25),
   phones: z.array(z.string().trim().regex(/^[0-9+()\s-]{7,20}$/, "Teléfono inválido")).max(3).default([]),
   email: z.email().max(200).nullish().or(z.literal("").transform(() => null)),
   address: optText(400),
   deliveryAddress: optText(400),
   city: optText(80),
   state: optText(80),
-  country: z.string().trim().min(2).max(80).default("Venezuela"),
+  country: z.string().trim().min(2).max(80).optional(),
   notes: optText(800),
   paymentTermId: optId,
   deliveryTermId: optId,
@@ -55,6 +54,7 @@ const fields = {
 const COLUMNS: Record<string, string> = {
   legalName: "legal_name",
   tradeName: "trade_name",
+  idType: "id_type",
   rif: "rif",
   phones: "phones",
   email: "email",
@@ -80,7 +80,7 @@ const COLUMNS: Record<string, string> = {
   isActive: "is_active"
 };
 
-const SELECT = `SELECT s.id, s.code, s.legal_name AS "legalName", s.trade_name AS "tradeName", s.rif, s.phones, s.email,
+const SELECT = `SELECT s.id, s.code, s.legal_name AS "legalName", s.trade_name AS "tradeName", s.id_type AS "idType", s.rif, s.phones, s.email,
   s.address, s.delivery_address AS "deliveryAddress", s.city, s.state, s.country, s.notes, s.is_active AS "isActive",
   s.payment_term_id AS "paymentTermId", pt.name AS "paymentTermName", s.delivery_term_id AS "deliveryTermId",
   s.delivery_method_id AS "deliveryMethodId", s.zone_id AS "zoneId", z.name AS "zoneName",
@@ -136,7 +136,7 @@ export const getCustomer = handler({ params: idParams }, ({ params }) => custome
 
 async function assertRifFree(rif: string, exceptId?: string) {
   const other = await one<{ code: string }>(`SELECT code FROM customers WHERE rif = $1 AND ($2::uuid IS NULL OR id <> $2)`, [rif, exceptId ?? null]);
-  if (other) throw conflict("RIF_TAKEN", `El RIF ${rif} ya está registrado (cliente ${other.code})`);
+  if (other) throw conflict("RIF_TAKEN", `La identificación ${rif} ya está registrada (cliente ${other.code})`);
 }
 
 export const createCustomer = handler(
@@ -151,6 +151,11 @@ export const createCustomer = handler(
     })
   },
   async ({ body: b, req, res }) => {
+    const country = await currentCountry();
+    const taxId = normalizeTaxId(country, b.rif, b.idType);
+    b.rif = taxId.value;
+    b.idType = taxId.idType;
+    b.country ??= country.name;
     await assertRifFree(b.rif);
     const data = b as unknown as Record<string, unknown>;
     const keys = Object.keys(COLUMNS).filter((k) => data[k] !== undefined);
@@ -175,7 +180,14 @@ export const updateCustomer = handler(
     body: z.object({ ...fields, isActive: z.boolean() }).partial().refine((b) => Object.keys(b).length > 0, "Nada que actualizar")
   },
   async ({ params, body: b, req }) => {
-    if (b.rif) await assertRifFree(b.rif, params.id);
+    if (b.rif !== undefined || b.idType !== undefined) {
+      const current = await one<{ rif: string }>(`SELECT rif FROM customers WHERE id = $1`, [params.id]);
+      if (!current) throw notFound();
+      const taxId = normalizeTaxId(await currentCountry(), b.rif ?? current.rif, b.idType);
+      b.rif = taxId.value;
+      b.idType = taxId.idType;
+      await assertRifFree(b.rif, params.id);
+    }
     const data = b as unknown as Record<string, unknown>;
     const keys = Object.keys(data).filter((k) => COLUMNS[k] && data[k] !== undefined);
     const row = await withTx(txCtx(req), (client) =>

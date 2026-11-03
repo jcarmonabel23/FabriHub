@@ -57,7 +57,10 @@ const KIND_LABEL: Record<(typeof ALERT_KINDS)[number], string> = {
   QC_PENDING: "Cuarentena prolongada",
   PO_OVERDUE: "OC atrasada",
   PRO_LATE: "OP atrasada",
-  SO_LATE: "OV atrasada"
+  SO_LATE: "OV atrasada",
+  RATES_FAILED: "Tasa de cambio sin actualizar",
+  EINV_FAILED: "Comprobantes electrónicos con problemas",
+  FISCAL_PENDING: "Documentos fiscales pendientes"
 };
 const SEVERITY_LABEL: Record<string, string> = { critical: "Crítica", warning: "Advertencia", info: "Aviso" };
 const QC_LABEL: Record<string, string> = { quarantine: "Cuarentena", approved: "Aprobado", rejected: "Rechazado", on_hold: "Retenido" };
@@ -453,7 +456,7 @@ function brandHeader(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, last: number, 
     ws.getCell(r, 1).value = value;
     ws.getCell(r, 1).font = font;
   };
-  put(row, brand ? `${brand.legalName} · RIF ${brand.rif}` : "FabriHub", { bold: true, size: 14, color: { argb: color } });
+  put(row, brand ? `${brand.legalName} · ${brand.taxIdLabel} ${brand.rif}` : "FabriHub", { bold: true, size: 14, color: { argb: color } });
   put(row + 1, lines.title, { bold: true, size: 12 });
   put(row + 2, lines.info, { size: 9, color: { argb: "FF6B7280" } });
   return { headerRow: row + 4, color };
@@ -468,7 +471,7 @@ async function buildWorkbook(def: ReportDef, rows: Record<string, unknown>[], me
   const ws = wb.addWorksheet(def.name.slice(0, 31), { views: [{ state: "frozen", ySplit: headerRowNo }] });
 
   const range = def.ranged ? `Del ${meta.from.split("-").reverse().join("/")} al ${meta.to.split("-").reverse().join("/")} · ` : "";
-  const now = new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: "America/Caracas" }).format(new Date());
+  const now = new Intl.DateTimeFormat("es-VE", { dateStyle: "short", timeStyle: "short", timeZone: meta.brand?.timezone ?? "America/Caracas" }).format(new Date());
   const { color: BRAND } = brandHeader(wb, ws, last, meta.brand, {
     title: def.name,
     info: `${range}Emitido el ${now} por ${meta.user} · ${rows.length} fila(s)`

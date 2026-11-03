@@ -29,7 +29,7 @@ import { authOf } from "../../security/context.js";
 import { alertVisibleTo } from "./access.js";
 import { companyBranding } from "../settings/branding.js";
 
-export const ALERT_KINDS = ["STOCK_MIN", "STOCK_MAX", "LOT_EXPIRING", "LOT_EXPIRED", "QC_PENDING", "PO_OVERDUE", "PRO_LATE", "SO_LATE"] as const;
+export const ALERT_KINDS = ["STOCK_MIN", "STOCK_MAX", "LOT_EXPIRING", "LOT_EXPIRED", "QC_PENDING", "PO_OVERDUE", "PRO_LATE", "SO_LATE", "RATES_FAILED", "EINV_FAILED", "FISCAL_PENDING"] as const;
 type Kind = (typeof ALERT_KINDS)[number];
 type Severity = "info" | "warning" | "critical";
 
@@ -57,7 +57,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 // ------------------------------------------------------------------ Detección
 
 async function detect(): Promise<Candidate[]> {
-  const [stock, lots, qc, po, pro, so] = await Promise.all([
+  const [stock, lots, qc, po, pro, so, rates, einv, fiscal] = await Promise.all([
     query<{ warehouse_id: string; warehouse_name: string; product_id: string; product_code: string; product_name: string; unit_code: string; quantity: string; min_qty: string; max_qty: string | null; kind: string }>(
       `SELECT warehouse_id, warehouse_name, product_id, product_code, product_name, unit_code, quantity, min_qty, max_qty, kind FROM v_stock_alerts`
     ),
@@ -100,6 +100,31 @@ async function detect(): Promise<Candidate[]> {
               (CURRENT_DATE - so.requested_date)::int AS days, so.created_by, so.status
          FROM sales_orders so JOIN customers c ON c.id = so.customer_id
         WHERE so.status IN ('confirmed', 'partially_delivered') AND so.requested_date < CURRENT_DATE`
+    ),
+    // Última consulta de tasas, solo si la empresa tiene la actualización automática activa
+    query<{ id: string; provider: string; message: string | null; started_at: string }>(
+      `SELECT r.id, r.provider, r.message, to_char(r.started_at, 'DD/MM/YYYY HH24:MI') AS started_at
+         FROM (SELECT * FROM exchange_rate_runs WHERE status <> 'running' ORDER BY started_at DESC LIMIT 1) r
+        WHERE r.status = 'error' AND COALESCE((fn_parameter('SETTINGS', 'rates_auto_enabled'))::text::boolean, FALSE)`
+    ),
+    // Comprobantes electrónicos (Costa Rica): rechazados en la última semana o que no logran enviarse
+    query<{ rejected: number; stuck: number; last_error: string | null }>(
+      `SELECT COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected,
+              COUNT(*) FILTER (WHERE status IN ('pending', 'sent') AND created_at < NOW() - INTERVAL '30 minutes' AND last_error IS NOT NULL)::int AS stuck,
+              (SELECT last_error FROM einvoice_documents WHERE status = 'pending' AND last_error IS NOT NULL ORDER BY updated_at DESC LIMIT 1) AS last_error
+         FROM einvoice_documents
+        WHERE status IN ('pending', 'sent') OR (status = 'rejected' AND decided_at > NOW() - INTERVAL '7 days')
+       HAVING COUNT(*) FILTER (WHERE status = 'rejected') > 0
+           OR COUNT(*) FILTER (WHERE status IN ('pending', 'sent') AND created_at < NOW() - INTERVAL '30 minutes' AND last_error IS NOT NULL) > 0`
+    ),
+    // Documento fiscal (Venezuela): sin imprimir en la caja o sin emitir/registrar en la imprenta digital tras 30 minutos
+    query<{ printer: number; digital: number; last_error: string | null }>(
+      `SELECT COUNT(*) FILTER (WHERE issuer = 'printer')::int AS printer,
+              COUNT(*) FILTER (WHERE issuer = 'digital')::int AS digital,
+              (ARRAY_AGG(last_error ORDER BY updated_at DESC) FILTER (WHERE last_error IS NOT NULL))[1] AS last_error
+         FROM fiscal_documents
+        WHERE (status = 'pending' OR status = 'contingency' AND issuer = 'digital') AND created_at < NOW() - INTERVAL '30 minutes'
+       HAVING COUNT(*) > 0`
     )
   ]);
 
@@ -201,6 +226,54 @@ async function detect(): Promise<Candidate[]> {
       source_id: r.id,
       owner_id: r.created_by,
       data: { due: r.due, daysLate: r.days, status: r.status }
+    });
+  }
+  for (const r of rates) {
+    out.push({
+      ...base,
+      key: "RATES_FAILED",
+      kind: "RATES_FAILED",
+      severity: "warning",
+      module: "SET_COMMERCIAL",
+      title: `No se pudo actualizar la tasa (${r.provider})`,
+      message: `Consulta del ${r.started_at}: ${r.message ?? "error desconocido"}. Revise la fuente o cargue la tasa a mano.`,
+      link: "/settings/commercial",
+      source_id: r.id,
+      data: { provider: r.provider }
+    });
+  }
+  for (const r of einv) {
+    const parts = [
+      r.rejected ? plural(r.rejected, "comprobante rechazado", "comprobantes rechazados") + " por Hacienda en la última semana" : null,
+      r.stuck ? plural(r.stuck, "comprobante sin enviar", "comprobantes sin enviar") + (r.last_error ? ` (${r.last_error})` : "") : null
+    ].filter(Boolean);
+    out.push({
+      ...base,
+      key: "EINV_FAILED",
+      kind: "EINV_FAILED",
+      severity: r.rejected ? "critical" : "warning",
+      module: "SET_COMPANY",
+      title: "Comprobantes electrónicos con problemas",
+      message: `${parts.join("; ")}. Revíselos en Configuración → Comprobantes electrónicos.`,
+      link: "/settings/einvoice",
+      data: { rejected: r.rejected, stuck: r.stuck }
+    });
+  }
+  for (const r of fiscal) {
+    const parts = [
+      r.printer ? plural(r.printer, "documento sin imprimir", "documentos sin imprimir") + " en la impresora fiscal" : null,
+      r.digital ? plural(r.digital, "documento sin emitir", "documentos sin emitir") + " en la imprenta digital" : null
+    ].filter(Boolean);
+    out.push({
+      ...base,
+      key: "FISCAL_PENDING",
+      kind: "FISCAL_PENDING",
+      severity: "critical",
+      module: "POS_SALES",
+      title: "Documentos fiscales pendientes",
+      message: `${parts.join("; ")}${r.last_error ? ` (${r.last_error})` : ""}. Revíselos en Configuración → Documento fiscal.`,
+      link: "/settings/fiscal",
+      data: { printer: r.printer, digital: r.digital }
     });
   }
   return out;

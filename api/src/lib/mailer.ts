@@ -55,7 +55,7 @@ function layout(
     const width = Math.round((brand.logo.width / brand.logo.height) * LOGO_HEIGHT);
     head = `<img src="cid:${LOGO_CID}" alt="${escapeHtml(brand.name)}" height="${LOGO_HEIGHT}" width="${width}" style="display:block;border:0;max-width:100%;height:auto">`;
   }
-  const by = brand ? `<br>${escapeHtml(brand.legalName)} · RIF ${escapeHtml(brand.rif)} · enviado con FabriHub` : "";
+  const by = brand ? `<br>${escapeHtml(brand.legalName)} · ${escapeHtml(brand.taxIdLabel)} ${escapeHtml(brand.rif)} · enviado con FabriHub` : "";
   const html = `<!doctype html><html><body style="margin:0;background:#f9fafb;font-family:Montserrat,Arial,sans-serif;color:#111827">
   <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
     <table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;padding:32px;border-top:4px solid ${color};box-shadow:0 10px 25px rgba(0,0,0,.06)">

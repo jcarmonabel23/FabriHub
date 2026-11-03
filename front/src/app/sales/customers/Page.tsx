@@ -13,6 +13,8 @@ import type { ColumnDef } from "@tanstack/react-table";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import FormModal from "@atoms/forms/FormModal";
+import TaxIdInput from "@atoms/forms/TaxIdInput";
+import { taxIdError, useCountry } from "@modules/country/country";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { useCan } from "@modules/access-control/useCan";
 import { confirmDelete } from "@utils/confirm";
@@ -25,7 +27,6 @@ import type { Customer } from "../types";
 
 const MODULE = "SAL_CUSTOMERS";
 const PAGE_SIZE = 20;
-const RIF_RE = /^[VEJPG]-\d{8}-\d$/;
 
 const useOptions = (catalog: string, appliesTo?: "sales") =>
   useQuery({
@@ -35,11 +36,12 @@ const useOptions = (catalog: string, appliesTo?: "sales") =>
     select: (rows) => rows.map((r) => ({ value: r.id, label: `${r.code} · ${r.name}` }))
   });
 
-type Form = Record<string, unknown> & { code: string; legalName: string; rif: string; phones: string[] };
+type Form = Record<string, unknown> & { code: string; legalName: string; idType: string | null; rif: string; phones: string[] };
 const EMPTY: Form = {
   code: "",
   legalName: "",
   tradeName: "",
+  idType: null,
   rif: "",
   phones: [],
   email: "",
@@ -47,7 +49,7 @@ const EMPTY: Form = {
   deliveryAddress: "",
   city: "",
   state: "",
-  country: "Venezuela",
+  country: "",
   notes: "",
   isWithholdingAgent: false,
   creditLimit: ""
@@ -58,6 +60,7 @@ const TEXTS = ["tradeName", "email", "address", "deliveryAddress", "city", "stat
 function CustomerModal({ opened, customer, onClose }: Readonly<{ opened: boolean; customer: Customer | null; onClose: () => void }>) {
   const qc = useQueryClient();
   const [f, setF] = useState<Form>(EMPTY);
+  const country = useCountry();
   const opts = {
     paymentTermId: useOptions("payment-terms", "sales"),
     deliveryTermId: useOptions("delivery-terms", "sales"),
@@ -73,7 +76,7 @@ function CustomerModal({ opened, customer, onClose }: Readonly<{ opened: boolean
   useEffect(() => {
     if (!opened) return;
     if (!customer) return setF(EMPTY);
-    const base: Form = { ...EMPTY, code: customer.code, legalName: customer.legalName, rif: customer.rif, phones: customer.phones };
+    const base: Form = { ...EMPTY, code: customer.code, legalName: customer.legalName, idType: customer.idType, rif: customer.rif, phones: customer.phones };
     for (const k of [...REFS, ...TEXTS]) base[k] = (customer as unknown as Record<string, unknown>)[k] ?? (k in EMPTY ? EMPTY[k] : "");
     base.isWithholdingAgent = customer.isWithholdingAgent;
     base.creditLimit = customer.creditLimit ?? "";
@@ -82,9 +85,9 @@ function CustomerModal({ opened, customer, onClose }: Readonly<{ opened: boolean
 
   const save = useMutation({
     mutationFn: () => {
-      const body: Record<string, unknown> = { legalName: f.legalName, rif: f.rif, phones: f.phones };
+      const body: Record<string, unknown> = { legalName: f.legalName, idType: f.idType, rif: f.rif, phones: f.phones };
       for (const k of TEXTS) body[k] = (f[k] as string) || null;
-      body.country = (f.country as string) || "Venezuela";
+      body.country = (f.country as string) || country.name;
       for (const k of REFS) body[k] = f[k] || null;
       body.isWithholdingAgent = Boolean(f.isWithholdingAgent);
       body.creditLimit = f.creditLimit === "" || f.creditLimit === null ? null : Number(f.creditLimit);
@@ -105,7 +108,7 @@ function CustomerModal({ opened, customer, onClose }: Readonly<{ opened: boolean
   const ref = (k: keyof typeof opts, label: string) => (
     <Select label={label} clearable searchable data={opts[k].data ?? []} value={(f[k] as string) || null} onChange={(v) => set(k, v)} />
   );
-  const rifOk = RIF_RE.test(f.rif);
+  const rifOk = Boolean(f.rif.trim()) && !taxIdError(country, f.idType, f.rif);
   const valid = (Boolean(customer) || /^[A-Za-z0-9_-]{1,20}$/.test(f.code)) && f.legalName.trim().length >= 3 && rifOk;
 
   return (
@@ -119,14 +122,7 @@ function CustomerModal({ opened, customer, onClose }: Readonly<{ opened: boolean
         <Tabs.Panel value="general">
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <TextInput label="Código" required disabled={Boolean(customer)} value={f.code} onChange={(e) => set("code", e.currentTarget.value.toUpperCase())} />
-            <TextInput
-              label="RIF"
-              required
-              placeholder="J-12345678-9"
-              value={f.rif}
-              onChange={(e) => set("rif", e.currentTarget.value.toUpperCase())}
-              error={f.rif && !rifOk ? "Formato: J-12345678-9" : null}
-            />
+            <TaxIdInput country={country} idType={f.idType} value={f.rif} onChange={(idType, rif) => setF((x) => ({ ...x, idType, rif }))} required />
             {text("legalName", "Razón social", { required: true })}
             {text("tradeName", "Nombre comercial")}
             <TagsInput label="Teléfonos" description="Hasta 3; Enter para agregar" maxTags={3} value={f.phones} onChange={(v) => set("phones", v)} />
@@ -165,7 +161,11 @@ function CustomerModal({ opened, customer, onClose }: Readonly<{ opened: boolean
               value={f.creditLimit as number | string}
               onChange={(v) => set("creditLimit", v)}
             />
-            <Switch label="Contribuyente especial (nos retiene IVA)" checked={Boolean(f.isWithholdingAgent)} onChange={(e) => set("isWithholdingAgent", e.currentTarget.checked)} mt="xs" />
+            {country.features.specialTaxpayer ? (
+              <Switch label="Contribuyente especial (nos retiene IVA)" checked={Boolean(f.isWithholdingAgent)} onChange={(e) => set("isWithholdingAgent", e.currentTarget.checked)} mt="xs" />
+            ) : (
+              <div />
+            )}
             <div />
             {text("receivableAccount", "Cuenta por cobrar")}
             {text("incomeAccount", "Cuenta de ingresos")}
@@ -182,6 +182,7 @@ function CustomerModal({ opened, customer, onClose }: Readonly<{ opened: boolean
 function ContactsDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: () => void }>) {
   const qc = useQueryClient();
   const can = useCan(MODULE);
+  const country = useCountry();
   const detail = useQuery({ queryKey: ["sales", "customers", id], queryFn: () => salesApi.getCustomer(id!), enabled: Boolean(id) });
   const [form, setForm] = useState<{ id?: string; name: string; position: string; phone: string; email: string; isPrimary: boolean } | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ["sales", "customers"] });
@@ -211,7 +212,7 @@ function ContactsDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: 
               {s.legalName} {!s.isActive && <Badge color="gray">Inactivo</Badge>}
             </Title>
             <Text size="sm" c="dimmed">
-              {s.code} · RIF {s.rif}
+              {s.code} · {country.taxIdLabel} {s.rif}
               {s.tradeName ? ` · ${s.tradeName}` : ""}
             </Text>
           </div>
@@ -314,6 +315,7 @@ function ContactsDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: 
 export default function CustomersPage() {
   const qc = useQueryClient();
   const can = useCan(MODULE);
+  const country = useCountry();
   const [search, setSearch] = useState("");
   const [debounced] = useDebouncedValue(search, 350);
   const [page, setPage] = useState(1);
@@ -415,7 +417,7 @@ export default function CustomersPage() {
         }
       />
       <Group mb="md">
-        <TextInput placeholder="Nombre, código o RIF" leftSection={<IconSearch size={16} />} value={search} onChange={(e) => (setSearch(e.currentTarget.value), setPage(1))} w={300} />
+        <TextInput placeholder={`Nombre, código o ${country.taxIdLabel}`} leftSection={<IconSearch size={16} />} value={search} onChange={(e) => (setSearch(e.currentTarget.value), setPage(1))} w={300} />
       </Group>
       <DataTable
         data={list.data?.items ?? []}

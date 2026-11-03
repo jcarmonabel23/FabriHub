@@ -21,6 +21,14 @@ export interface PosTerminal {
   ticketPadding: number;
   nextTicket: number;
   notes: string | null;
+  /** Impresión del ticket (fase 17) */
+  ticketWidthMm: 58 | 80;
+  ticketCopies: number;
+  autoPrint: boolean;
+  ticketFooter: string | null;
+  /** Costa Rica (fase 18): sucursal y terminal del consecutivo de Hacienda */
+  einvBranch: number;
+  einvTerminal: number;
   openSessionId: string | null;
   openSessionNumber: string | null;
   openSessionCashier: string | null;
@@ -35,8 +43,62 @@ export interface PosTerminalInput {
   defaultCustomerId: string | null;
   ticketPrefix?: string;
   ticketPadding: number;
+  ticketWidthMm: 58 | 80;
+  ticketCopies: number;
+  autoPrint: boolean;
+  ticketFooter: string | null;
+  einvBranch: number;
+  einvTerminal: number;
   notes: string | null;
   isActive: boolean;
+}
+
+/** Ticket térmico listo para imprimir (fase 17); los textos fiscales vienen según el país */
+export interface PosTicket {
+  widthMm: 58 | 80;
+  copies: number;
+  autoPrint: boolean;
+  /** Impresiones registradas (0 = nunca se imprimió) */
+  printCount: number;
+  countryCode: string;
+  timezone: string;
+  issuer: { name: string; legalName: string; taxIdLabel: string; taxId: string; address: string | null; phones: string[]; email: string | null };
+  ticketNumber: string;
+  status: "completed" | "voided";
+  soldAt: string;
+  terminal: string;
+  sessionNumber: string;
+  cashier: string | null;
+  /** null = consumidor final */
+  customer: { name: string; idLabel: string; taxId: string; address: string | null } | null;
+  currencyCode: string;
+  lines: { code: string; name: string; quantity: number; unitCode: string; unitPrice: number; discountPct: number; net: number; taxMark: string }[];
+  subtotal: number;
+  discountPct: number;
+  discountAmount: number;
+  taxes: { label: string; rate: number; base: number; amount: number }[];
+  taxAmount: number;
+  total: number;
+  igtf: { rate: number; base: number; amount: number } | null;
+  grandTotal: number;
+  payments: { method: string; currencyCode: string; amount: number; exchangeRate: number; amountBase: number; reference: string | null }[];
+  change: { currencyCode: string; amount: number } | null;
+  voided: { at: string | null; reason: string | null } | null;
+  /** Costa Rica (fase 18): comprobante electrónico de la venta */
+  einvoice: {
+    docType: "FE" | "TE";
+    docName: string;
+    consecutive: string;
+    clave: string;
+    situation: "1" | "2" | "3";
+    status: "pending" | "sent" | "accepted" | "rejected" | "cancelled";
+    statusLabel: string;
+    creditNote: { consecutive: string; clave: string; status: string } | null;
+  } | null;
+  legends: string[];
+  footer: string | null;
+  /** Solo al registrar una impresión */
+  print?: { printNo: number; isCopy: boolean };
 }
 
 export type PaymentMethod = "cash" | "card" | "mobile" | "transfer";
@@ -286,6 +348,17 @@ export interface PosSale {
     taxAmount: number;
   }[];
   payments: { lineNo: number; method: PaymentMethod; currencyCode: string; amount: number; exchangeRate: number; amountBase: number; reference: string | null }[];
+  /** Costa Rica (fase 18): comprobante electrónico y, si se anuló, su nota de crédito */
+  einvoices: {
+    id: string;
+    docType: "FE" | "TE" | "NC";
+    docName: string;
+    clave: string;
+    consecutive: string;
+    situation: "1" | "2" | "3";
+    status: "pending" | "sent" | "accepted" | "rejected" | "cancelled";
+    issuedAt: string;
+  }[];
 }
 
 export interface Paged<T> {

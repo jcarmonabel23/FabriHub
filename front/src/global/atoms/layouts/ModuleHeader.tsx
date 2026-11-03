@@ -4,7 +4,8 @@
  * @description Encabezado de módulo (patrón DaviHub): logo + título + descripción + acciones de navegación
  *
  * Cada acción puede exigir `requiredCode`: si el usuario no puede entrar a ese módulo, el botón
- * no se pinta (misma regla que menú y rutas).
+ * no se pinta (misma regla que menú y rutas). Con `countryFeature`, solo se pinta en los países que
+ * tienen esa característica (p. ej. comprobantes electrónicos solo en Costa Rica).
  */
 
 import type { ComponentType, ReactNode } from "react";
@@ -12,6 +13,8 @@ import { Button } from "@mantine/core";
 import { useLocation, useNavigate } from "react-router-dom";
 import { LogoMark } from "@atoms/brand/Logo";
 import { useCanAccess, useModuleStatus } from "@modules/access-control/useCan";
+import type { CompanyCountry } from "@auth/types";
+import { useCountry } from "@modules/country/country";
 
 export interface HeaderAction {
   id: string;
@@ -19,6 +22,7 @@ export interface HeaderAction {
   path: string;
   icon: ComponentType<{ size?: number; stroke?: number }>;
   requiredCode?: string;
+  countryFeature?: keyof CompanyCountry["features"];
 }
 
 interface ModuleHeaderProps {
@@ -33,9 +37,12 @@ export default function ModuleHeader({ title, description, actions, right }: Rea
   const { pathname } = useLocation();
   const canAccess = useCanAccess();
   const statusOf = useModuleStatus();
+  const country = useCountry();
 
   const visible = (actions ?? []).filter(
-    (a) => !a.requiredCode || (canAccess(a.requiredCode) && !statusOf(a.requiredCode).offline)
+    (a) =>
+      (!a.requiredCode || (canAccess(a.requiredCode) && !statusOf(a.requiredCode).offline)) &&
+      (!a.countryFeature || country.features[a.countryFeature])
   );
   // Resalta la acción más específica (p. ej. /pos/sales/tickets antes que /pos/sales)
   const activePath = visible

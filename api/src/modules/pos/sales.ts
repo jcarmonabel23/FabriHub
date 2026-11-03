@@ -23,8 +23,11 @@ import type pg from "pg";
 import { z } from "zod";
 import { one, pool, query, withTx, type Db } from "../../db.js";
 import { HttpError, badRequest, conflict, handler, idParams, notFound, pageQuery } from "../../lib/http.js";
+import { currentCountry, normalizeTaxId, tryNormalizeTaxId } from "../../lib/taxId.js";
 import { authOf, txCtx } from "../../security/context.js";
 import { imageUrls } from "../files/images.js";
+import { creditNoteForSale, issueForSale, kickQueue, saleEinvoices } from "../einvoice/service.js";
+import { fiscalCreditNoteForSale, issueFiscalForSale, issueFiscalNow, kickFiscalQueue, saleFiscalDocs } from "../fiscal/service.js";
 import { exchangeRate } from "../purchases/fiscal.js";
 import { buildOrder, type BuiltOrder, type OrderInput } from "../sales/orders.js";
 import { METHODS, lockOwnSession } from "./sessions.js";
@@ -35,7 +38,12 @@ const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 const EPS = 1e-9;
 const CENT = 0.005;
 
-export const FINAL_CONSUMER = { code: "CONSUMIDOR_FINAL", name: "Consumidor final", rif: "V-00000000-0" };
+export const FINAL_CONSUMER = { code: "CONSUMIDOR_FINAL", name: "Consumidor final" };
+/** Identificación genérica del consumidor final por país (en CR el tiquete no lleva receptor) */
+const FINAL_CONSUMER_ID: Record<string, { idType: string; rif: string }> = {
+  VE: { idType: "RIF", rif: "V-00000000-0" },
+  CR: { idType: "EXTRANJERO", rif: "CONSUMIDORFINAL" }
+};
 
 /** null = todas; si no, solo las vendidas por el usuario */
 const ownerScope = (req: Request) => (req.modulePermissions?.includes("view_all") ? null : authOf(req).userId);
@@ -102,10 +110,14 @@ export const posCatalog = handler({ query: catalogQuery }, async ({ query: q }) 
 
 /** «Consumidor final» de la empresa activa (se crea la primera vez) */
 export async function finalConsumerId(db: Db): Promise<string> {
+  const country = (await one<{ code: string }>(`SELECT fn_current_country() AS code`, [], db))!.code;
+  const generic = FINAL_CONSUMER_ID[country] ?? FINAL_CONSUMER_ID.VE;
   await query(
-    `INSERT INTO customers (code, legal_name, rif, notes) VALUES ($1, $2, $3, 'Cliente genérico de las ventas de mostrador')
+    `INSERT INTO customers (code, legal_name, id_type, rif, country, notes)
+     VALUES ($1, $2, $3, $4, (SELECT name FROM catalogs_countries WHERE code = fn_current_country()),
+             'Cliente genérico de las ventas de mostrador')
      ON CONFLICT DO NOTHING`,
-    [FINAL_CONSUMER.code, FINAL_CONSUMER.name, FINAL_CONSUMER.rif],
+    [FINAL_CONSUMER.code, FINAL_CONSUMER.name, generic.idType, generic.rif],
     db
   );
   const row = await one<{ id: string }>(`SELECT id FROM customers WHERE code = $1`, [FINAL_CONSUMER.code], db);
@@ -113,23 +125,13 @@ export async function finalConsumerId(db: Db): Promise<string> {
   return row.id;
 }
 
-/** Normaliza un RIF o cédula escrito de cualquier forma: «v12345678» → V-12345678, «j123456789» → J-12345678-9 */
-export function normalizeRif(raw: string): string | null {
-  const s = raw.toUpperCase().replace(/[\s.\-]/g, "");
-  const m = /^([VEJPG])(\d+)$/.exec(s);
-  if (!m) return null;
-  const [, kind, digits] = m;
-  if (digits.length === 9) return `${kind}-${digits.slice(0, 8)}-${digits.slice(8)}`;
-  if ((kind === "V" || kind === "E") && digits.length >= 5 && digits.length <= 8) return `${kind}-${digits}`;
-  return null;
-}
-
-const CUSTOMER_SELECT = `SELECT c.id, c.code, c.legal_name AS name, c.rif, c.phones->>0 AS phone, c.email, c.address,
+const CUSTOMER_SELECT = `SELECT c.id, c.code, c.legal_name AS name, c.id_type AS "idType", c.rif, c.phones->>0 AS phone, c.email, c.address,
        (c.code = '${FINAL_CONSUMER.code}') AS "isFinalConsumer"
   FROM customers c`;
 
 export const searchCustomers = handler({ query: z.object({ search: z.string().trim().min(1).max(80) }) }, async ({ query: q }) => {
-  const rif = normalizeRif(q.search);
+  // Una identificación escrita de cualquier forma («v12345678», «3-101-123456») se busca normalizada
+  const rif = tryNormalizeTaxId(await currentCountry(), q.search);
   const digits = q.search.replace(/\D/g, "");
   return query(
     `${CUSTOMER_SELECT}
@@ -141,27 +143,29 @@ export const searchCustomers = handler({ query: z.object({ search: z.string().tr
 });
 
 const quickCustomerBody = z.object({
-  rif: z.string().trim().min(5).max(20),
+  rif: z.string().trim().min(3).max(25),
+  /** Sin tipo, se deduce del formato (RIF o cédula en VE; física, jurídica, DIMEX en CR) */
+  idType: z.string().trim().toUpperCase().max(12).nullish(),
   name: z.string().trim().min(3).max(160),
   phone: z.string().trim().max(30).nullish(),
   email: z.email().max(200).nullish(),
   address: z.string().trim().max(400).nullish()
 });
 
-/** Alta rápida desde la caja: RIF o cédula y nombre. Si ya existe, 409 con el cliente */
+/** Alta rápida desde la caja: identificación y nombre. Si ya existe, 409 con el cliente */
 export const quickCreateCustomer = handler({ body: quickCustomerBody }, async ({ body: b, req, res }) => {
-  const rif = normalizeRif(b.rif);
-  if (!rif) throw badRequest("INVALID_RIF", "Escriba una cédula (V-12345678) o un RIF (J-12345678-9)");
+  const country = await currentCountry();
+  const { idType, value: rif } = normalizeTaxId(country, b.rif, b.idType);
   const id = await withTx(txCtx(req), async (client) => {
     const existing = await one<{ id: string; name: string }>(`SELECT id, legal_name AS name FROM customers WHERE rif = $1`, [rif], client);
     if (existing) throw new HttpError(409, "CUSTOMER_EXISTS", `Ya existe el cliente ${existing.name} con ${rif}`, { id: existing.id });
-    const base = rif.replace(/-/g, "");
+    const base = rif.replace(/-/g, "").slice(0, 17);
     let code = base;
     for (let i = 2; await one(`SELECT 1 FROM customers WHERE code = $1`, [code], client); i++) code = `${base}-${i}`;
     const row = await one<{ id: string }>(
-      `INSERT INTO customers (code, legal_name, rif, phones, email, address, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, 'Alta rápida desde el punto de venta', fn_current_app_user()) RETURNING id`,
-      [code, b.name, rif, JSON.stringify(b.phone ? [b.phone] : []), b.email ?? null, b.address ?? null],
+      `INSERT INTO customers (code, legal_name, id_type, rif, country, phones, email, address, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Alta rápida desde el punto de venta', fn_current_app_user()) RETURNING id`,
+      [code, b.name, idType, rif, country.name, JSON.stringify(b.phone ? [b.phone] : []), b.email ?? null, b.address ?? null],
       client
     );
     return row!.id;
@@ -240,7 +244,7 @@ async function compute(db: Db | pg.PoolClient, b: QuoteInput, userId: string): P
   const params = (await one<{ base: string; max_disc: number; igtf_on: boolean; igtf_rate: number }>(
     `SELECT co.base_currency_id AS base,
             COALESCE((fn_parameter('POS', 'max_discount_pct'))::text::numeric, 0)::float AS max_disc,
-            COALESCE((fn_parameter('POS', 'igtf_enabled'))::text::boolean, FALSE) AS igtf_on,
+            (COALESCE((fn_parameter('POS', 'igtf_enabled'))::text::boolean, FALSE) AND fn_country_has('igtf')) AS igtf_on,
             COALESCE((fn_parameter('POS', 'igtf_rate'))::text::numeric, 0)::float AS igtf_rate
        FROM companies co WHERE co.id = fn_current_company()`,
     [],
@@ -530,10 +534,18 @@ export const createSale = handler({ body: saleBody }, async ({ body: b, req, res
         [...costByLine.values()].reduce((a, x) => a + x, 0)
       ]);
     }
-    return id;
+
+    // 4) Costa Rica: comprobante electrónico (clave y consecutivo); se firma y envía después, en la cola
+    await issueForSale(client, id);
+    // 5) Venezuela: documento fiscal según el emisor de la caja (impresora fiscal o imprenta digital)
+    const fiscal = await issueFiscalForSale(client, id);
+    return { id, fiscal };
   });
+  kickQueue();
+  // Imprenta digital: se intenta emitir ya para que el ticket salga con su número de control
+  await issueFiscalNow(saleId.fiscal);
   res.status(201);
-  return saleDetail(saleId, null);
+  return saleDetail(saleId.id, null);
 });
 
 // ------------------------------------------------------------------ Anular
@@ -565,7 +577,13 @@ export const voidSale = handler(
         `UPDATE pos_sales SET status = 'voided', voided_at = NOW(), voided_by = fn_current_app_user(), void_authorized_by = $2, void_reason = $3 WHERE id = $1`,
         [params.id, authorizedBy, body.reason]
       );
+      // Costa Rica: el comprobante electrónico no se borra; se anula con una nota de crédito
+      await creditNoteForSale(client, params.id, body.reason);
+      // Venezuela: nota de crédito fiscal que anula la factura
+      await fiscalCreditNoteForSale(client, params.id, body.reason);
     });
+    kickQueue();
+    kickFiscalQueue();
     return saleDetail(params.id, null);
   }
 );
@@ -620,7 +638,8 @@ export async function saleDetail(id: string, scope: string | null, db?: Db) {
       db
     )
   ]);
-  return { ...header, lines, payments };
+  const [einvoices, fiscalDocs] = await Promise.all([saleEinvoices(id, db), saleFiscalDocs(id, db)]);
+  return { ...header, lines, payments, einvoices, fiscalDocs };
 }
 
 const listQuery = pageQuery.extend({

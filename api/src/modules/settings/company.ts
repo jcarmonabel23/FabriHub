@@ -4,16 +4,20 @@
  * @description Datos de la empresa activa (SET_COMPANY)
  *
  * El logo y el ícono se suben aparte (branding.ts); aquí se devuelven como URLs firmadas.
+ * El país (fase 15) se fija al crear la empresa y no se cambia aquí: de él dependen los impuestos,
+ * la identificación fiscal y la zona horaria. Contribuyente especial y agente de retención solo
+ * existen donde el país los contempla.
  */
 
 import { z } from "zod";
 import { one, withTx } from "../../db.js";
 import { badRequest, handler } from "../../lib/http.js";
+import { currentCountry, normalizeTaxId } from "../../lib/taxId.js";
 import { txCtx } from "../../security/context.js";
 import { brandingUrls } from "./branding.js";
 
-const SELECT = `SELECT c.legal_name AS "legalName", c.trade_name AS "tradeName", c.rif, c.address, c.city, c.state,
-  c.country, c.phones, c.email, c.website, c.base_currency_id AS "baseCurrencyId", cur.code AS "baseCurrencyCode",
+const SELECT = `SELECT c.legal_name AS "legalName", c.trade_name AS "tradeName", c.id_type AS "idType", c.rif, c.address, c.city, c.state,
+  c.country_code AS "countryCode", c.country, c.phones, c.email, c.website, c.base_currency_id AS "baseCurrencyId", cur.code AS "baseCurrencyCode",
   c.is_special_taxpayer AS "isSpecialTaxpayer", c.is_withholding_agent AS "isWithholdingAgent",
   c.fiscal_year_start_month AS "fiscalYearStartMonth", c.updated_at AS "updatedAt",
   c.id, c.logo_file_id, c.icon_file_id, c.brand_color
@@ -39,15 +43,12 @@ const optionalText = (max: number) =>
 const body = z.object({
   legalName: z.string().trim().min(3).max(160),
   tradeName: optionalText(120),
-  rif: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[VEJPG]-\d{8}-\d$/, "Formato de RIF: J-12345678-9"),
+  /** Tipo de identificación del país (RIF, FISICA, JURIDICA…); sin él se deduce del formato */
+  idType: z.string().trim().toUpperCase().max(12).nullish(),
+  rif: z.string().trim().min(3).max(25),
   address: optionalText(400),
   city: optionalText(80),
   state: optionalText(80),
-  country: z.string().trim().min(2).max(80),
   phones: z.array(z.string().trim().regex(/^[0-9+()\s-]{7,20}$/, "Teléfono inválido")).max(3),
   email: z.email().max(200).nullish().or(z.literal("").transform(() => null)),
   website: optionalText(200),
@@ -67,11 +68,15 @@ const body = z.object({
 export const updateCompany = handler({ body }, async ({ body: b, req }) => {
   const currency = await one(`SELECT 1 FROM catalogs_currencies WHERE id = $1 AND is_active`, [b.baseCurrencyId]);
   if (!currency) throw badRequest("INVALID_CURRENCY", "La moneda base debe existir y estar activa");
+  const country = await currentCountry();
+  const taxId = normalizeTaxId(country, b.rif, b.idType);
+  const special = country.features.specialTaxpayer ? b.isSpecialTaxpayer : false;
+  const withholding = country.features.withholdings ? b.isWithholdingAgent : false;
 
   await withTx(txCtx(req), (client) =>
     client.query(
       `UPDATE companies SET legal_name = $1, trade_name = $2, rif = $3, address = $4, city = $5, state = $6,
-              country = $7, phones = $8, email = $9, website = $10, base_currency_id = $11,
+              id_type = $7, phones = $8, email = $9, website = $10, base_currency_id = $11,
               is_special_taxpayer = $12, is_withholding_agent = $13, fiscal_year_start_month = $14,
               brand_color = CASE WHEN $15::boolean THEN $16 ELSE brand_color END,
               updated_by = fn_current_app_user()
@@ -79,17 +84,17 @@ export const updateCompany = handler({ body }, async ({ body: b, req }) => {
       [
         b.legalName,
         b.tradeName ?? null,
-        b.rif,
+        taxId.value,
         b.address ?? null,
         b.city ?? null,
         b.state ?? null,
-        b.country,
+        taxId.idType,
         JSON.stringify(b.phones),
         b.email ?? null,
         b.website ?? null,
         b.baseCurrencyId,
-        b.isSpecialTaxpayer,
-        b.isWithholdingAgent,
+        special,
+        withholding,
         b.fiscalYearStartMonth,
         b.brandColor !== undefined,
         b.brandColor ?? null
