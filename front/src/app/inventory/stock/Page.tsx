@@ -14,6 +14,7 @@ import dayjs from "dayjs";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable, { TbEmpty } from "@atoms/tables/DataTable";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import ProductSelect from "../components/ProductSelect";
 import { INVENTORY_ACTIONS } from "../inventoryActions";
 import { ExpiryBadge } from "../lots/Page";
@@ -116,8 +117,8 @@ function StockTab({ warehouses }: Readonly<{ warehouses: { value: string; label:
           </Text>
         )
       },
-      { header: "Costo prom.", cell: ({ row: { original: r } }) => <Text size="sm" ta="right">{fmtMoney(r.avgCost, 4)}</Text> },
-      { header: "Valor", cell: ({ row: { original: r } }) => <Text size="sm" ta="right" fw={700}>{fmtMoney(r.value)}</Text> }
+      { header: "Costo prom.", cell: ({ row: { original: r } }) => <Text size="sm" ta="right">{fmtBase(r.avgCost, 4)}</Text> },
+      { header: "Valor", cell: ({ row: { original: r } }) => <Text size="sm" ta="right" fw={700}>{fmtBase(r.value)}</Text> }
     );
     return cols;
   }, [groupBy]);
@@ -210,11 +211,11 @@ function KardexTab({ warehouses }: Readonly<{ warehouses: { value: string; label
                   <Table.Td ta="right" c="red.7">
                     {r.qtyOut ? fmtMoney(r.qtyOut, 2) : ""}
                   </Table.Td>
-                  <Table.Td ta="right">{fmtMoney(r.unitCost, 4)}</Table.Td>
+                  <Table.Td ta="right">{fmtBase(r.unitCost, 4)}</Table.Td>
                   <Table.Td ta="right" fw={700}>
                     {fmtMoney(r.balance, 2)}
                   </Table.Td>
-                  <Table.Td ta="right">{fmtMoney(r.avgCost, 4)}</Table.Td>
+                  <Table.Td ta="right">{fmtBase(r.avgCost, 4)}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
@@ -316,7 +317,7 @@ export default function StockPage() {
     <div className="p-6">
       <ModuleHeader title="Existencias" description="Saldos valorados a costo promedio, kárdex y alertas" actions={INVENTORY_ACTIONS} />
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mb="lg">
-        <StatCard label="Valor del inventario" value={s ? fmtMoney(s.totalValue) : "…"} icon={IconCash} color="petrol" />
+        <StatCard label="Valor del inventario" value={s ? fmtBase(s.totalValue) : "…"} icon={IconCash} color="petrol" />
         <StatCard label="Productos con existencia" value={s ? String(s.productsWithStock) : "…"} icon={IconPackages} color="blue" />
         <StatCard label="Alertas de stock" value={s ? String(s.stockAlerts) : "…"} icon={IconAlertTriangle} color={s?.stockAlerts ? "orange" : "gray"} />
         <StatCard label="Lotes por vencer" value={s ? String(s.lotAlerts) : "…"} icon={IconCalendarExclamation} color={s?.lotAlerts ? "red" : "gray"} />

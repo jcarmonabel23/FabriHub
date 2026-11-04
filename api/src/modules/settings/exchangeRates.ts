@@ -10,6 +10,7 @@
  * como currencies_rates) y se registran con rate_date = fecha valor de la fuente.
  *   · BCV (Venezuela): no tiene API; se lee la página oficial (USD, EUR, CNY, TRY, RUB).
  *   · BCCR (Costa Rica): API SDDE con token propio de la empresa; indicador 318 (venta) o 317 (compra).
+ *     El euro sale del indicador 333 (dólares por euro) × el del dólar; si no responde, se omite.
  * Una tasa cargada a mano nunca se reemplaza (is_automatic = FALSE); la consulta la reporta como
  * «kept_manual». Cada consulta queda en exchange_rate_runs; si la última falló, el detector de
  * alertas avisa (RATES_FAILED).
@@ -89,6 +90,8 @@ const bcv: RateProvider = {
 const BCCR_URL = "https://apim.bccr.fi.cr/SDDE/api/Bccr.GE.SDDE.Publico.Indicadores.API";
 /** Tipo de cambio de referencia colón/dólar: 317 compra, 318 venta */
 const BCCR_INDICATOR = { buy: 317, sell: 318 } as const;
+/** Euro: dólares por 1 euro */
+const BCCR_EUR_USD = 333;
 
 const shiftDate = (iso: string, days: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
@@ -100,26 +103,39 @@ const bccr: RateProvider = {
   async fetch(ctx) {
     if (!ctx.token) throw new ProviderError("Falta el token del BCCR: genérelo en el sitio de Indicadores Económicos y cárguelo aquí");
     const slash = (d: string) => d.replace(/-/g, "/");
-    const code = BCCR_INDICATOR[ctx.bccrSide];
-    // Una semana hacia atrás: completa los días que la tarea no haya alcanzado a registrar
-    const url = `${ctx.baseUrl ?? BCCR_URL}/indicadoresEconomicos/${code}/series?fechainicio=${slash(shiftDate(ctx.today, -7))}&fechafin=${slash(shiftDate(ctx.today, 1))}&idioma=ES`;
-    const res = await fetchText(url, { timeoutMs: 30_000, headers: { authorization: `Bearer ${ctx.token}`, accept: "application/json" } });
-    if (res.status === 401 || res.status === 403) throw new ProviderError("El BCCR rechazó el token (vencido o inválido): genere uno nuevo y cárguelo");
-    if (res.status !== 200) throw new ProviderError(`El BCCR respondió ${res.status}`);
-    let series: { fecha?: string; valorDatoPorPeriodo?: number | string }[];
-    try {
-      series = JSON.parse(res.body)?.datos?.[0]?.series ?? [];
-    } catch {
-      throw new ProviderError("Respuesta del BCCR no reconocida");
+    /** Serie de un indicador (fecha → valor). Una semana hacia atrás: completa los días que la tarea no haya alcanzado a registrar */
+    const series = async (code: number) => {
+      const url = `${ctx.baseUrl ?? BCCR_URL}/indicadoresEconomicos/${code}/series?fechainicio=${slash(shiftDate(ctx.today, -7))}&fechafin=${slash(shiftDate(ctx.today, 1))}&idioma=ES`;
+      const res = await fetchText(url, { timeoutMs: 30_000, headers: { authorization: `Bearer ${ctx.token}`, accept: "application/json" } });
+      if (res.status === 401 || res.status === 403) throw new ProviderError("El BCCR rechazó el token (vencido o inválido): genere uno nuevo y cárguelo");
+      if (res.status !== 200) throw new ProviderError(`El BCCR respondió ${res.status}`);
+      let rows: { fecha?: string; valorDatoPorPeriodo?: number | string }[];
+      try {
+        rows = JSON.parse(res.body)?.datos?.[0]?.series ?? [];
+      } catch {
+        throw new ProviderError("Respuesta del BCCR no reconocida");
+      }
+      return new Map(
+        rows
+          .filter((s) => s.fecha && s.valorDatoPorPeriodo !== undefined && s.valorDatoPorPeriodo !== null)
+          .map((s) => [
+            String(s.fecha).slice(0, 10).replace(/\//g, "-"),
+            typeof s.valorDatoPorPeriodo === "number" ? s.valorDatoPorPeriodo : Number(String(s.valorDatoPorPeriodo).replace(",", "."))
+          ])
+      );
+    };
+    const usd = await series(BCCR_INDICATOR[ctx.bccrSide]);
+    if (!usd.size) throw new ProviderError("El BCCR no devolvió datos para la última semana");
+    const quotes: Quote[] = [...usd].map(([valueDate, perUnit]) => ({ currency: "USD", valueDate, perUnit }));
+    // Euro en colones = (dólares por euro) × (colones por dólar) del mismo día; si el BCCR no lo da, se omite
+    const eurUsd = await series(BCCR_EUR_USD).catch((err) => {
+      logger.warn({ err: (err as Error).message }, "[rates] el BCCR no devolvió el euro");
+      return new Map<string, number>();
+    });
+    for (const [valueDate, perUsd] of usd) {
+      const usdPerEur = eurUsd.get(valueDate);
+      if (usdPerEur && usdPerEur > 0.5 && usdPerEur < 3) quotes.push({ currency: "EUR", valueDate, perUnit: Number((usdPerEur * perUsd).toFixed(8)) });
     }
-    const quotes = series
-      .filter((s) => s.fecha && s.valorDatoPorPeriodo !== undefined && s.valorDatoPorPeriodo !== null)
-      .map((s) => ({
-        currency: "USD",
-        valueDate: String(s.fecha).slice(0, 10).replace(/\//g, "-"),
-        perUnit: typeof s.valorDatoPorPeriodo === "number" ? s.valorDatoPorPeriodo : Number(String(s.valorDatoPorPeriodo).replace(",", "."))
-      }));
-    if (!quotes.length) throw new ProviderError("El BCCR no devolvió datos para la última semana");
     return quotes;
   }
 };
@@ -299,6 +315,29 @@ export async function runRates(trigger: "schedule" | "manual", userId: string | 
   } finally {
     running.delete(companyId);
   }
+}
+
+/**
+ * @function refreshIfStale
+ * @description Para la tarjeta del tablero: si la empresa no tiene la tasa del día y no se consultó en
+ * la última hora, lanza una consulta en segundo plano (como la programada). Devuelve si la lanzó.
+ */
+export async function refreshIfStale(): Promise<boolean> {
+  const country = await currentCountry();
+  const provider = country.rateProvider ? PROVIDERS[country.rateProvider] : undefined;
+  if (!provider) return false;
+  const companyId = (await one<{ id: string }>(`SELECT fn_current_company() AS id`))!.id;
+  if (running.has(companyId)) return true;
+  const stale = await one<{ stale: boolean }>(
+    `SELECT NOT EXISTS (SELECT 1 FROM currencies_rates WHERE rate_date >= CURRENT_DATE)
+        AND NOT EXISTS (SELECT 1 FROM exchange_rate_runs WHERE started_at > NOW() - INTERVAL '1 hour') AS stale`
+  );
+  if (!stale?.stale) return false;
+  if (provider.needsToken && !(await one(`SELECT 1 FROM company_secrets WHERE key = $1`, [BCCR_TOKEN]))) return false;
+  void runRates("schedule", null).catch((err) => {
+    if ((err as { code?: string }).code !== "RATES_RUNNING") logger.warn({ err, companyId }, "[rates] la consulta desde el tablero falló");
+  });
+  return true;
 }
 
 // ------------------------------------------------------------------ Tarea programada

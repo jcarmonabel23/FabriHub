@@ -39,7 +39,7 @@ function startMock() {
         return res.end(JSON.stringify({ mensaje: "No autorizado" }));
       }
       const today = todayIn("America/Costa_Rica");
-      const value = m[1] === "318" ? mock.sell : mock.buy;
+      const value = m[1] === "333" ? 1.08 : m[1] === "318" ? mock.sell : mock.buy;
       res.setHeader("content-type", "application/json");
       return res.end(
         JSON.stringify({
@@ -101,6 +101,12 @@ export async function run() {
     const r4 = await runRates(`${MOCK}/bcv`);
     check("y la consulta ya no la reemplaza", act(r4, "EUR") === "kept_manual" && (await eurRates())[0]?.rate === 46, r4.json?.rates);
 
+    const card = (await call("GET", "/dashboard/exchange-rates", { token: admin })).json;
+    const cardOf = (c) => card?.rates?.find((x) => x.code === c);
+    check("tarjeta del tablero: bolívares por dólar y por euro, fuente BCV", card?.local?.code === "VES" && card?.provider?.code === "BCV" && card.rates?.length === 2, card);
+    check("tarjeta: dólar 36,75 y euro 46 vigentes hoy, marcados como manuales", cardOf("USD")?.rate === 36.75 && cardOf("EUR")?.rate === 46 && cardOf("USD")?.official === false && cardOf("EUR")?.rateDate === todayIn("America/Caracas"), card?.rates);
+    check("tarjeta: con la tasa del día no lanza otra consulta", card?.refreshing === false, card);
+
     const broken = await runRates(`${MOCK}/bcv-roto`);
     check("página del BCV irreconocible → consulta fallida con el motivo", broken.json?.status === "error" && /fecha valor/.test(broken.json?.message ?? ""), broken.json);
     const st2 = (await call("GET", "/settings/exchange-rates", { token: admin })).json;
@@ -138,14 +144,19 @@ export async function run() {
       check("el token nunca vuelve en las respuestas", s2.json?.token?.configured && !JSON.stringify(s2.json).includes(TOKEN), s2.json?.token);
 
       const ok = await runRates(`${MOCK}/bccr`);
-      const hit = mock.bccrHits.at(-1);
+      const hit = mock.bccrHits.find((h) => h.indicator !== "333");
       check("consulta al BCCR con el token como Bearer e indicador 318 (venta)", hit?.auth === `Bearer ${TOKEN}` && hit?.indicator === "318", hit);
       const usdCr = ok.json?.rates?.find((x) => x.currency === "USD");
+      const eurCr = ok.json?.rates?.find((x) => x.currency === "EUR");
+      const cardCr = (await call("GET", "/dashboard/exchange-rates", { token: admin })).json;
+      const crOf = (c) => cardCr?.rates?.find((x) => x.code === c);
+      check("tarjeta en Costa Rica: colones por dólar y por euro, fuente BCCR, oficiales", cardCr?.local?.code === "CRC" && cardCr?.provider?.code === "BCCR" && crOf("USD")?.rate === 512.34 && crOf("EUR")?.rate === 553.3272 && crOf("USD")?.official === true, cardCr);
+      check("euro en colones = indicador 333 (dólares por euro) × dólar", mock.bccrHits.at(-1)?.indicator === "333" && eurCr?.rate === Number((1.08 * 512.34).toFixed(8)), ok.json?.rates);
       check("tipo de cambio en colones registrado", ok.json?.status === "ok" && usdCr?.rate === 512.34 && usdCr?.action === "inserted", ok.json);
 
       await setParam("rates_bccr_side", "buy");
       const buy = await runRates(`${MOCK}/bccr`);
-      check("con «compra» usa el indicador 317", mock.bccrHits.at(-1)?.indicator === "317" && buy.json?.rates?.find((x) => x.currency === "USD")?.rate === 505.1, buy.json?.rates);
+      check("con «compra» usa el indicador 317", mock.bccrHits.at(-2)?.indicator === "317" && buy.json?.rates?.find((x) => x.currency === "USD")?.rate === 505.1, buy.json?.rates);
       await setParam("rates_bccr_side", "sell");
 
       await call("PUT", "/settings/exchange-rates/token", { token: admin, body: { token: "otro-token-que-el-bccr-no-reconoce-123" } });

@@ -18,6 +18,7 @@ import DataTable from "@atoms/tables/DataTable";
 import { QUALITY_COLOR, QUALITY_LABEL, type QualityStatus } from "@/app/inventory/types";
 import { useCan } from "@modules/access-control/useCan";
 import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { PURCHASES_ACTIONS } from "../purchasesActions";
 import { purchasesApi } from "../services/purchases.service";
@@ -203,13 +204,13 @@ function ReceptionDrawer({ id, onClose, onOpen }: Readonly<{ id: string | null; 
                       </Text>
                     )}
                   </Table.Td>
-                  <Table.Td ta="right">{fmtMoney(l.unitCost, 4)}</Table.Td>
+                  <Table.Td ta="right">{fmtBase(l.unitCost, 4)}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
           </Table>
           <Text ta="right" fw={700}>
-            Costo total (moneda base): {fmtMoney(r.totalCost)}
+            Costo total (moneda base): {fmtBase(r.totalCost)}
           </Text>
         </Stack>
       )}
@@ -255,7 +256,7 @@ export default function ReceptionsPage() {
       { header: "Orden", cell: ({ row: { original: r } }) => <Text size="sm">{r.orderNumber}</Text> },
       { header: "Proveedor", cell: ({ row: { original: r } }) => <Text size="sm">{r.supplierName}</Text> },
       { header: "Almacén", size: 80, cell: ({ row: { original: r } }) => <Text size="sm">{r.warehouseCode}</Text> },
-      { header: "Costo", cell: ({ row: { original: r } }) => <Text size="sm" ta="right" fw={600}>{fmtMoney(r.totalCost)}</Text> },
+      { header: "Costo", cell: ({ row: { original: r } }) => <Text size="sm" ta="right" fw={600}>{fmtBase(r.totalCost)}</Text> },
       { header: "Registró", cell: ({ row: { original: r } }) => <Text size="xs">{r.createdBy}</Text> }
     ],
     []

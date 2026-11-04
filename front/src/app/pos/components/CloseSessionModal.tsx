@@ -12,7 +12,7 @@ import { Alert, NumberInput, Table, Text, Textarea } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import FormModal from "@atoms/forms/FormModal";
-import { fmtMoney } from "@utils/format";
+import { fmtBase, fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { posApi } from "../services/pos.service";
 import { PAYMENT_METHOD_LABEL, type PosSessionDetail } from "../types";
@@ -77,7 +77,7 @@ export default function CloseSessionModal({ sessionId, onClose, onClosed }: Read
     >
       {detail.data && (
         <Text size="sm" c="dimmed">
-          Caja {detail.data.terminalCode} · {detail.data.totals.completed} venta(s) por {fmtMoney(detail.data.totals.grandTotal)}
+          Caja {detail.data.terminalCode} · {detail.data.totals.completed} venta(s) por {fmtBase(detail.data.totals.grandTotal)}
           {detail.data.totals.voided ? ` · ${detail.data.totals.voided} anulada(s)` : ""}
         </Text>
       )}
@@ -99,11 +99,11 @@ export default function CloseSessionModal({ sessionId, onClose, onClosed }: Read
               <Table.Td>
                 {PAYMENT_METHOD_LABEL[r.method]} · {r.currencyCode}
               </Table.Td>
-              <Table.Td ta="right">{fmtMoney(r.opening)}</Table.Td>
-              <Table.Td ta="right">{fmtMoney(r.received)}</Table.Td>
-              <Table.Td ta="right">{r.change ? `-${fmtMoney(r.change)}` : "—"}</Table.Td>
+              <Table.Td ta="right">{fmtCur(r.opening, r.currencyCode)}</Table.Td>
+              <Table.Td ta="right">{fmtCur(r.received, r.currencyCode)}</Table.Td>
+              <Table.Td ta="right">{r.change ? `-${fmtCur(r.change, r.currencyCode)}` : "—"}</Table.Td>
               <Table.Td ta="right" fw={600}>
-                {fmtMoney(r.expected)}
+                {fmtCur(r.expected, r.currencyCode)}
               </Table.Td>
               <Table.Td>
                 <NumberInput
@@ -118,7 +118,7 @@ export default function CloseSessionModal({ sessionId, onClose, onClosed }: Read
                 />
               </Table.Td>
               <Table.Td ta="right" c={r.diff === null || Math.abs(r.diff) < 0.005 ? undefined : r.diff < 0 ? "red" : "teal"} fw={600}>
-                {r.diff === null ? "—" : fmtMoney(r.diff)}
+                {r.diff === null ? "—" : fmtCur(r.diff, r.currencyCode)}
               </Table.Td>
             </Table.Tr>
           ))}

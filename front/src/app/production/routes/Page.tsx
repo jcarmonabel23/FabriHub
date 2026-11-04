@@ -17,6 +17,7 @@ import { useCan } from "@modules/access-control/useCan";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { confirmDelete } from "@utils/confirm";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { PRODUCTION_ACTIONS } from "../productionActions";
 import { productionApi } from "../services/production.service";
@@ -151,7 +152,7 @@ function RouteEditor({ target, onClose }: Readonly<{ target: string | "new" | nu
           Agregar etapa
         </Button>
         <Text size="sm" c="dimmed">
-          {fmtMoney(totalHours, 2)} h para {fmtMoney(Number(f.baseQuantity) || 0, 2)} · costo de conversión {fmtMoney(baseCost)}
+          {fmtMoney(totalHours, 2)} h para {fmtMoney(Number(f.baseQuantity) || 0, 2)} · costo de conversión {fmtBase(baseCost)}
         </Text>
       </Group>
       <Switch label="Activa" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.currentTarget.checked })} />

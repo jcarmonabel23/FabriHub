@@ -15,6 +15,7 @@ import FormModal from "@atoms/forms/FormModal";
 import { useCan } from "@modules/access-control/useCan";
 import { confirmDelete } from "@utils/confirm";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import ProductSelect from "../components/ProductSelect";
 import { INVENTORY_ACTIONS } from "../inventoryActions";
@@ -172,7 +173,7 @@ export default function WarehousesPage() {
         )
       },
       { header: "Productos con existencia", size: 120, cell: ({ row: { original: w } }) => <Text size="sm">{w.productsWithStock}</Text> },
-      { header: "Valor del inventario", cell: ({ row: { original: w } }) => <Text size="sm" fw={600}>{fmtMoney(w.stockValue)}</Text> },
+      { header: "Valor del inventario", cell: ({ row: { original: w } }) => <Text size="sm" fw={600}>{fmtBase(w.stockValue)}</Text> },
       { header: "Usuarios asignados", size: 110, cell: ({ row: { original: w } }) => <Text size="sm">{w.users}</Text> },
       {
         header: "Activo",

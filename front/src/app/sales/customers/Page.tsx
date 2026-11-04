@@ -20,7 +20,7 @@ import { useCan } from "@modules/access-control/useCan";
 import { confirmDelete } from "@utils/confirm";
 import { notifyError, notifySuccess } from "@utils/notify";
 import type { Contact } from "@/app/purchases/types";
-import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { SALES_ACTIONS } from "../salesActions";
 import { salesApi } from "../services/sales.service";
 import type { Customer } from "../types";
@@ -245,7 +245,7 @@ function ContactsDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: 
                   Crédito usado por órdenes abiertas
                 </Text>
                 <Text size="xs" fw={600}>
-                  {fmtMoney(s.creditUsed)} de {fmtMoney(s.creditLimit)}
+                  {fmtBase(s.creditUsed)} de {fmtBase(s.creditLimit)}
                 </Text>
               </Group>
               <Progress value={Math.min(100, (s.creditUsed / Math.max(s.creditLimit, 0.01)) * 100)} color={s.creditUsed > s.creditLimit ? "red" : "teal"} />
@@ -360,7 +360,7 @@ export default function CustomersPage() {
             </Text>
           ) : (
             <Text size="sm" c={s.creditUsed > s.creditLimit ? "red" : undefined}>
-              {fmtMoney(s.creditUsed)} / {fmtMoney(s.creditLimit)}
+              {fmtBase(s.creditUsed)} / {fmtBase(s.creditLimit)}
             </Text>
           )
       },

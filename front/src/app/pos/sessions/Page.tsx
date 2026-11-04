@@ -16,7 +16,8 @@ import { Link } from "react-router-dom";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import DataTable from "@atoms/tables/DataTable";
 import { useCan } from "@modules/access-control/useCan";
-import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtDateTime } from "@utils/format";
+import { fmtBase, fmtCur } from "@utils/money";
 import CloseSessionModal from "../components/CloseSessionModal";
 import { POS_ACTIONS } from "../posActions";
 import { posApi } from "../services/pos.service";
@@ -48,8 +49,8 @@ function SessionDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: (
           </Group>
           <SimpleGrid cols={4}>
             <Stat label="Ventas" value={String(s.totals.completed)} />
-            <Stat label="Vendido" value={fmtMoney(s.totals.grandTotal)} />
-            <Stat label="IVA" value={fmtMoney(s.totals.taxAmount)} />
+            <Stat label="Vendido" value={fmtBase(s.totals.grandTotal)} />
+            <Stat label="IVA" value={fmtBase(s.totals.taxAmount)} />
             <Stat label="Anuladas" value={String(s.totals.voided)} />
           </SimpleGrid>
           <Table withTableBorder fz="sm">
@@ -70,15 +71,15 @@ function SessionDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: (
                   <Table.Td>
                     {PAYMENT_METHOD_LABEL[c.method]} · {c.currencyCode}
                   </Table.Td>
-                  <Table.Td ta="right">{fmtMoney(c.opening)}</Table.Td>
-                  <Table.Td ta="right">{fmtMoney(c.received)}</Table.Td>
-                  <Table.Td ta="right">{c.change ? `-${fmtMoney(c.change)}` : "—"}</Table.Td>
+                  <Table.Td ta="right">{fmtCur(c.opening, c.currencyCode)}</Table.Td>
+                  <Table.Td ta="right">{fmtCur(c.received, c.currencyCode)}</Table.Td>
+                  <Table.Td ta="right">{c.change ? `-${fmtCur(c.change, c.currencyCode)}` : "—"}</Table.Td>
                   <Table.Td ta="right" fw={600}>
-                    {fmtMoney(c.expected)}
+                    {fmtCur(c.expected, c.currencyCode)}
                   </Table.Td>
-                  <Table.Td ta="right">{c.counted === null ? "—" : fmtMoney(c.counted)}</Table.Td>
+                  <Table.Td ta="right">{c.counted === null ? "—" : fmtCur(c.counted, c.currencyCode)}</Table.Td>
                   <Table.Td ta="right" c={c.difference ? (c.difference < 0 ? "red" : "teal") : undefined}>
-                    {c.difference === null ? "—" : fmtMoney(c.difference)}
+                    {c.difference === null ? "—" : fmtCur(c.difference, c.currencyCode)}
                   </Table.Td>
                 </Table.Tr>
               ))}
@@ -86,7 +87,7 @@ function SessionDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: (
           </Table>
           {s.status === "closed" && (
             <Text size="sm">
-              Diferencia total (moneda base): <b>{fmtMoney(s.differenceTotal)}</b>
+              Diferencia total (moneda base): <b>{fmtBase(s.differenceTotal)}</b>
               {s.closingNotes ? ` · ${s.closingNotes}` : ""}
             </Text>
           )}
@@ -144,12 +145,12 @@ export default function PosSessionsPage() {
           </Text>
         )
       },
-      { header: "Ventas", cell: ({ row: { original: s } }) => <Text size="sm">{s.salesCount === null ? "—" : `${s.salesCount} · ${fmtMoney(s.salesTotal)}`}</Text> },
+      { header: "Ventas", cell: ({ row: { original: s } }) => <Text size="sm">{s.salesCount === null ? "—" : `${s.salesCount} · ${fmtBase(s.salesTotal)}`}</Text> },
       {
         header: "Diferencia",
         cell: ({ row: { original: s } }) => (
           <Text size="sm" c={s.differenceTotal ? (s.differenceTotal < 0 ? "red" : "teal") : undefined}>
-            {s.differenceTotal === null ? "—" : fmtMoney(s.differenceTotal)}
+            {s.differenceTotal === null ? "—" : fmtBase(s.differenceTotal)}
           </Text>
         )
       },

@@ -10,6 +10,7 @@
 import { ActionIcon, Alert, Badge, Button, Divider, Group, Image, NumberInput, Popover, ScrollArea, Stack, Text, Tooltip } from "@mantine/core";
 import { IconAlertTriangle, IconCash, IconMinus, IconPackage, IconPercentage, IconPlus, IconShieldLock, IconTrash } from "@tabler/icons-react";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { useCart } from "../../store/cart";
 import type { Quote } from "../../types";
 import CustomerPicker from "./CustomerPicker";
@@ -51,7 +52,7 @@ export default function CartPanel({ quote, quoting, quoteError, maxDiscountPct, 
                   </Text>
                   <Group gap={6}>
                     <Text size="xs" c="dimmed">
-                      {q ? `${fmtMoney(q.unitPrice)} / ${l.unitCode}` : l.code}
+                      {q ? `${fmtBase(q.unitPrice)} / ${l.unitCode}` : l.code}
                     </Text>
                     {l.discountPct > 0 && (
                       <Badge size="xs" color={over(l.discountPct) ? "orange" : "gray"} variant="light">
@@ -106,7 +107,7 @@ export default function CartPanel({ quote, quoting, quoteError, maxDiscountPct, 
                   </Group>
                 </div>
                 <Text size="sm" fw={700} className={stale ? "opacity-50" : ""}>
-                  {q ? fmtMoney(q.netAmount + q.taxAmount) : "…"}
+                  {q ? fmtBase(q.netAmount + q.taxAmount) : "…"}
                 </Text>
               </div>
             );
@@ -149,14 +150,14 @@ export default function CartPanel({ quote, quoting, quoteError, maxDiscountPct, 
         {(quote?.taxes ?? [])
           .filter((t) => t.rate > 0)
           .map((t) => (
-            <Row key={t.rate} label={`IVA ${t.rate}% (base ${fmtMoney(t.base)})`} value={t.amount} />
+            <Row key={t.rate} label={`IVA ${t.rate}% (base ${fmtBase(t.base)})`} value={t.amount} />
           ))}
         <Group justify="space-between" mt={4}>
           <Text fw={700} size="lg">
             Total
           </Text>
           <Text fw={800} size="xl">
-            {quote && lines.length ? fmtMoney(quote.total) : fmtMoney(0)}
+            {quote && lines.length ? fmtBase(quote.total) : fmtBase(0)}
           </Text>
         </Group>
         {quote?.needsSupervisor && (
@@ -188,7 +189,7 @@ function Row({ label, value }: Readonly<{ label: string; value: number | undefin
       <Text size="sm" c="dimmed">
         {label}
       </Text>
-      <Text size="sm">{fmtMoney(value ?? 0)}</Text>
+      <Text size="sm">{fmtBase(value ?? 0)}</Text>
     </Group>
   );
 }

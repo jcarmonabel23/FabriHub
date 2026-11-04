@@ -15,6 +15,7 @@ import { IconAlertTriangle, IconCheck, IconPlus, IconTrash } from "@tabler/icons
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ApiError } from "@clients/apiClient";
 import { fmtMoney } from "@utils/format";
+import { fmtBase, fmtCur } from "@utils/money";
 import { notifyError } from "@utils/notify";
 import SupervisorFields, { SUPERVISOR_ERRORS, supervisorReady } from "../../components/SupervisorFields";
 import { posApi } from "../../services/pos.service";
@@ -109,11 +110,11 @@ export default function PaymentModal({ opened, onClose, base, currencies, settin
       <Stack>
         <Group grow align="stretch">
           <Box label="Total a pagar" value={q ? `${baseCur?.code} ${fmtMoney(q.grandTotal)}` : "…"} hint={q?.igtf.amount ? `incluye IGTF ${q.igtf.rate}%: ${fmtMoney(q.igtf.amount)}` : undefined} />
-          <Box label="Pagado" value={q ? fmtMoney(q.paid) : "…"} />
+          <Box label="Pagado" value={q ? fmtCur(q.paid, baseCur?.code) : "…"} />
           {q && q.change > 0 ? (
             <Box label="Vuelto" value={`${changeCur?.code} ${fmtMoney(q.changeInCurrency)}`} tone="teal" hint={changeCur && !changeCur.isBase ? `= ${fmtMoney(q.change)} ${baseCur?.code}` : undefined} />
           ) : (
-            <Box label="Falta" value={q ? fmtMoney(q.pending) : "…"} tone={q && q.pending > 0.005 ? "red" : "teal"} />
+            <Box label="Falta" value={q ? fmtCur(q.pending, baseCur?.code) : "…"} tone={q && q.pending > 0.005 ? "red" : "teal"} />
           )}
         </Group>
 
@@ -152,7 +153,7 @@ export default function PaymentModal({ opened, onClose, base, currencies, settin
               }}
             />
             <Button variant="default" disabled={!exact} onClick={() => setAmount(exact)}>
-              Exacto{exact ? ` ${fmtMoney(exact)}` : ""}
+              Exacto{exact ? ` ${fmtBase(exact)}` : ""}
             </Button>
           </Group>
           {needsRef && (

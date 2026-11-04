@@ -20,6 +20,7 @@ import { coreAuth } from "@auth/store/coreAuth";
 import { useCan, useCanAccess } from "@modules/access-control/useCan";
 import { useCountry } from "@modules/country/country";
 import { fmtDateTime, fmtMoney, fmtPct } from "@utils/format";
+import { fmtBase, fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { SALES_ACTIONS } from "../salesActions";
 import { salesApi, type SalesAction } from "../services/sales.service";
@@ -140,7 +141,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
 
           {st === "pending_approval" && (
             <Alert variant="light" color="yellow" icon={<IconInfoCircle size={18} />}>
-              Excede el límite de crédito del cliente ({fmtMoney(o.creditLimit ?? 0)}): con esta orden quedaría en {fmtMoney(o.creditExposure ?? 0)}.
+              Excede el límite de crédito del cliente ({fmtBase(o.creditLimit ?? 0)}): con esta orden quedaría en {fmtBase(o.creditExposure ?? 0)}.
               {isCreator && can("approve") ? " Usted la creó: por segregación de funciones debe aprobarla otra persona." : " Debe aprobarla alguien con permiso de aprobación."}
             </Alert>
           )}
@@ -181,12 +182,12 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
                     </Table.Td>
                     <Table.Td ta="right">{qty(l.quantity)} {l.unitCode}</Table.Td>
                     <Table.Td ta="right">
-                      {fmtMoney(l.unitPrice, 4)}
+                      {fmtCur(l.unitPrice, o.currencyCode, 4)}
                       {l.priceSource === "promo" && <Badge size="xs" color="pink" variant="light" ml={4}>promo</Badge>}
                       {l.discountPct > 0 && <Text size="xs" c="dimmed">− {fmtPct(l.discountPct)}</Text>}
                     </Table.Td>
                     <Table.Td ta="right">{fmtPct(l.taxRate)}</Table.Td>
-                    <Table.Td ta="right" fw={600}>{fmtMoney(l.netAmount)}</Table.Td>
+                    <Table.Td ta="right" fw={600}>{fmtCur(l.netAmount, o.currencyCode)}</Table.Td>
                     <Table.Td ta="right">
                       <Tooltip label={`Disponible sin reservar en ${o.warehouseCode}: ${qty(l.available)}`}>
                         <Text size="sm" c={short ? "orange" : undefined} fw={short ? 700 : undefined}>{qty(l.quantityReserved)}</Text>
@@ -202,22 +203,22 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
           </Table>
 
           <Stack gap={2} className="rounded-lg bg-gray-50 p-3" maw={420} ml="auto" w="100%">
-            <Group justify="space-between"><Text size="sm">Base imponible</Text><Text size="sm">{fmtMoney(o.taxableAmount)}</Text></Group>
+            <Group justify="space-between"><Text size="sm">Base imponible</Text><Text size="sm">{fmtCur(o.taxableAmount, o.currencyCode)}</Text></Group>
             {o.taxesDetail.taxes.map((x) => (
-              <Group key={x.rate} justify="space-between"><Text size="sm">IVA {fmtPct(x.rate)}</Text><Text size="sm">{fmtMoney(x.amount)}</Text></Group>
+              <Group key={x.rate} justify="space-between"><Text size="sm">IVA {fmtPct(x.rate)}</Text><Text size="sm">{fmtCur(x.amount, o.currencyCode)}</Text></Group>
             ))}
             <Group justify="space-between">
               <Text fw={700}>Total {o.currencyCode}</Text>
-              <Text fw={800} ff="monospace">{fmtMoney(o.total)}</Text>
+              <Text fw={800} ff="monospace">{fmtCur(o.total, o.currencyCode)}</Text>
             </Group>
             {o.taxesDetail.withholdings.map((w) => (
               <Group key={w.rateId} justify="space-between">
                 <Text size="sm" c="red">Retiene el cliente: {w.label}</Text>
-                <Text size="sm" c="red">− {fmtMoney(w.amount)}</Text>
+                <Text size="sm" c="red">− {fmtCur(w.amount, o.currencyCode)}</Text>
               </Group>
             ))}
             {o.withholdingAmount > 0 && (
-              <Group justify="space-between"><Text fw={700}>Neto a cobrar</Text><Text fw={800} ff="monospace">{fmtMoney(o.receivable)}</Text></Group>
+              <Group justify="space-between"><Text fw={700}>Neto a cobrar</Text><Text fw={800} ff="monospace">{fmtCur(o.receivable, o.currencyCode)}</Text></Group>
             )}
           </Stack>
 
@@ -226,7 +227,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
               <Title order={6} tt="uppercase" c="petrol.8" mb="xs">Notas de entrega</Title>
               {o.deliveries.map((d) => (
                 <Text key={d.id} size="sm" td={d.status === "cancelled" ? "line-through" : undefined}>
-                  {d.number} · {fmtD(d.deliveryDate)} · {d.lines} línea(s) · {fmtMoney(d.netAmount)} · {d.createdBy}
+                  {d.number} · {fmtD(d.deliveryDate)} · {d.lines} línea(s) · {fmtCur(d.netAmount, o.currencyCode)} · {d.createdBy}
                   {d.movementNumber ? ` · ${d.movementNumber}` : ""}
                 </Text>
               ))}
@@ -293,7 +294,7 @@ export default function SalesOrdersPage() {
         )
       },
       { header: "Entrega", cell: ({ row: { original: o } }) => <Text size="sm">{fmtD(o.requestedDate)}</Text> },
-      { header: "Total", cell: ({ row: { original: o } }) => <Text size="sm" fw={600} ta="right">{o.currencySymbol} {fmtMoney(o.total)}</Text> },
+      { header: "Total", cell: ({ row: { original: o } }) => <Text size="sm" fw={600} ta="right">{fmtCur(o.total, o.currencyCode)}</Text> },
       { header: "Creada por", cell: ({ row: { original: o } }) => <Text size="xs">{o.createdBy ?? "—"}</Text> }
     ],
     []

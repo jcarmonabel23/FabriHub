@@ -20,6 +20,7 @@ import { useCan } from "@modules/access-control/useCan";
 import { useCountry } from "@modules/country/country";
 import { QUALITY_COLOR, QUALITY_LABEL, type QualityStatus } from "@/app/inventory/types";
 import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtBase, fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { SALES_ACTIONS } from "../salesActions";
 import { salesApi } from "../services/sales.service";
@@ -107,19 +108,19 @@ function DeliveryDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: 
                     {l.expiresOn && <Text size="xs" c="dimmed">vence {fmtD(l.expiresOn)}</Text>}
                   </Table.Td>
                   <Table.Td ta="right">{qty(l.quantity)} {l.unitCode}</Table.Td>
-                  <Table.Td ta="right">{fmtMoney(l.unitPrice, 4)}</Table.Td>
-                  <Table.Td ta="right">{fmtMoney(l.unitCost, 4)}</Table.Td>
+                  <Table.Td ta="right">{fmtCur(l.unitPrice, n.currencyCode, 4)}</Table.Td>
+                  <Table.Td ta="right">{fmtBase(l.unitCost, 4)}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
           </Table>
           <Stack gap={2} className="rounded-lg bg-gray-50 p-3" maw={420} ml="auto" w="100%">
-            <Group justify="space-between"><Text size="sm">Venta neta ({n.currencyCode})</Text><Text size="sm">{fmtMoney(n.netAmount)}</Text></Group>
-            <Group justify="space-between"><Text size="sm">Costo de lo despachado (moneda base)</Text><Text size="sm">{fmtMoney(n.costAmount)}</Text></Group>
+            <Group justify="space-between"><Text size="sm">Venta neta ({n.currencyCode})</Text><Text size="sm">{fmtCur(n.netAmount, n.currencyCode)}</Text></Group>
+            <Group justify="space-between"><Text size="sm">Costo de lo despachado (moneda base)</Text><Text size="sm">{fmtBase(n.costAmount)}</Text></Group>
             <Group justify="space-between">
               <Text fw={700}>Margen bruto</Text>
               <Text fw={800} c={(margin ?? 0) >= 0 ? "teal" : "red"}>
-                {fmtMoney(margin)} {n.netAmount > 0 ? `(${fmtMoney(((margin ?? 0) / (n.netAmount * n.exchangeRate)) * 100, 1)} %)` : ""}
+                {fmtBase(margin)} {n.netAmount > 0 ? `(${fmtMoney(((margin ?? 0) / (n.netAmount * n.exchangeRate)) * 100, 1)} %)` : ""}
               </Text>
             </Group>
           </Stack>

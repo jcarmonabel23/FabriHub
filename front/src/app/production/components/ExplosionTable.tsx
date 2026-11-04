@@ -8,6 +8,7 @@ import { Alert, Badge, Group, Loader, Stack, Table, Text } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { productionApi } from "../services/production.service";
 
 const qty = (v: number) => fmtMoney(v, v % 1 === 0 ? 0 : 3);
@@ -71,13 +72,13 @@ export default function ExplosionTable({ productId, quantity, formulaId }: Reado
                   {r.shortfall > 0 ? qty(r.shortfall) : "—"}
                 </Text>
               </Table.Td>
-              <Table.Td ta="right">{r.level === 1 ? fmtMoney(r.quantity * r.stdCost) : ""}</Table.Td>
+              <Table.Td ta="right">{r.level === 1 ? fmtBase(r.quantity * r.stdCost) : ""}</Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
       <Text size="sm" ta="right" fw={700}>
-        Materiales a costo estándar: {fmtMoney(e.materialCost)}
+        Materiales a costo estándar: {fmtBase(e.materialCost)}
       </Text>
       <Text size="xs" c="dimmed">
         Los niveles inferiores (sombreados) muestran lo que costaría fabricar el semielaborado completo; el faltante neto lo calcula el MRP.

@@ -144,6 +144,31 @@ export interface Indicators {
   planning: { lastRunAt: string | null; period: string | null; openSuggestions: { make: number; buy: number; late: number } } | null;
 }
 
+// ------------------------------------------------------------------ Tipo de cambio (tarjeta del tablero)
+
+export interface ReferenceRate {
+  code: string;
+  name: string;
+  symbol: string | null;
+  /** Unidades de moneda local por 1 unidad de `code` (vigente hoy) */
+  rate: number | null;
+  rateDate: string | null;
+  source: string | null;
+  /** La trajo la consulta automática (BCV/BCCR); si no, se cargó a mano */
+  official: boolean;
+  /** Ya publicada para un día posterior (el BCV publica la del día hábil siguiente) */
+  next: { rate: number | null; rateDate: string } | null;
+}
+
+export interface DashboardRates {
+  local: { code: string; symbol: string | null };
+  provider: { code: string; name: string } | null;
+  /** Se lanzó una consulta en segundo plano: volver a preguntar en unos segundos */
+  refreshing: boolean;
+  rates: ReferenceRate[];
+  lastRun: { status: string; finishedAt: string | null; message: string | null } | null;
+}
+
 // ------------------------------------------------------------------ Reportes
 
 export interface ReportInfo {
@@ -160,6 +185,8 @@ export interface ReportColumn {
   header: string;
   type: "text" | "int" | "qty" | "money" | "pct" | "date" | "datetime";
   total?: boolean;
+  /** Montos: columna de la fila con su moneda; sin ella, moneda base */
+  currencyKey?: string;
 }
 
 export interface ReportPreview {
@@ -184,6 +211,7 @@ export const dashboardApi = {
   markAllRead: () => apiPost<{ updated: number }>("/notifications/read-all"),
 
   indicators: () => apiGet<Indicators>("/dashboard/indicators"),
+  exchangeRates: () => apiGet<DashboardRates>("/dashboard/exchange-rates"),
 
   alerts: (q: { status: "open" | "resolved"; kind?: string | null; severity?: string | null; search?: string; page: number; pageSize: number }) =>
     apiGet<Paged<Alert>>("/dashboard/alerts", q),

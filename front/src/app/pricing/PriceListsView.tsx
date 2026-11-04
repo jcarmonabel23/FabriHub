@@ -20,7 +20,7 @@ import ProductSelect from "@/app/inventory/components/ProductSelect";
 import type { ProductOption } from "@/app/inventory/types";
 import { useCan } from "@modules/access-control/useCan";
 import { confirmDelete } from "@utils/confirm";
-import { fmtMoney } from "@utils/format";
+import { fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import type { HeaderAction } from "@atoms/layouts/ModuleHeader";
 import type { PriceList } from "@/app/purchases/types";
@@ -135,12 +135,12 @@ function ItemsDrawer({ scope, module, list, onClose }: Readonly<ScopeProps & { l
                   </Text>
                 </Table.Td>
                 <Table.Td ta="right">
-                  {fmtMoney(i.price, 4)} / {i.unitCode}
+                  {fmtCur(i.price, list?.currencyCode, 4)} / {i.unitCode}
                 </Table.Td>
                 <Table.Td>
                   {i.promoPrice !== null ? (
                     <Badge color={i.promoActive ? "teal" : "gray"} variant="light">
-                      {fmtMoney(i.promoPrice, 4)} · {fmtD(i.promoFrom)} – {fmtD(i.promoTo)}
+                      {fmtCur(i.promoPrice, list?.currencyCode, 4)} · {fmtD(i.promoFrom)} – {fmtD(i.promoTo)}
                     </Badge>
                   ) : (
                     "—"

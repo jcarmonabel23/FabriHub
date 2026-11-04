@@ -17,6 +17,7 @@ import { settingsApi } from "@/app/settings/services/settings.service";
 import { useCan } from "@modules/access-control/useCan";
 import { confirmDelete } from "@utils/confirm";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { ImageThumb } from "@atoms/forms/ImageField";
 import ProductSelect from "../components/ProductSelect";
@@ -139,7 +140,7 @@ function ProductDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: (
               <Table.Tr>
                 <Table.Th>Precio venta / compra</Table.Th>
                 <Table.Td>
-                  {p.salePrice === null ? "—" : fmtMoney(p.salePrice)} / {p.purchasePrice === null ? "—" : fmtMoney(p.purchasePrice)}
+                  {p.salePrice === null ? "—" : fmtBase(p.salePrice)} / {p.purchasePrice === null ? "—" : fmtBase(p.purchasePrice)}
                 </Table.Td>
               </Table.Tr>
             </Table.Tbody>
@@ -169,9 +170,9 @@ function ProductDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: (
                       <Table.Td ta="right">
                         {fmtMoney(s.quantity, p.unitDecimals)} {p.stockUnitCode}
                       </Table.Td>
-                      <Table.Td ta="right">{fmtMoney(s.avgCost, 4)}</Table.Td>
+                      <Table.Td ta="right">{fmtBase(s.avgCost, 4)}</Table.Td>
                       <Table.Td ta="right" fw={600}>
-                        {fmtMoney(s.value)}
+                        {fmtBase(s.value)}
                       </Table.Td>
                     </Table.Tr>
                   ))}

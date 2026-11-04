@@ -23,6 +23,7 @@ import { ApiError } from "@clients/apiClient";
 import { useCan } from "@modules/access-control/useCan";
 import { useCountry } from "@modules/country/country";
 import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtBase, fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import SupervisorFields, { SUPERVISOR_ERRORS, supervisorReady } from "../components/SupervisorFields";
 import { POS_ACTIONS } from "../posActions";
@@ -150,10 +151,10 @@ function SaleDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: () =
                   <Table.Td ta="right">
                     {fmtMoney(l.quantity, 2)} {l.unitCode}
                   </Table.Td>
-                  <Table.Td ta="right">{fmtMoney(l.unitPrice)}</Table.Td>
+                  <Table.Td ta="right">{fmtCur(l.unitPrice, s.currencyCode)}</Table.Td>
                   <Table.Td ta="right">{l.discountPct ? `${l.discountPct}%` : "—"}</Table.Td>
                   <Table.Td ta="right">{l.taxRate ? `${l.taxRate}%` : "Ex."}</Table.Td>
-                  <Table.Td ta="right">{fmtMoney(l.netAmount)}</Table.Td>
+                  <Table.Td ta="right">{fmtCur(l.netAmount, s.currencyCode)}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
@@ -173,7 +174,7 @@ function SaleDrawer({ id, onClose }: Readonly<{ id: string | null; onClose: () =
                   <Table.Td>
                     {p.currencyCode} {fmtMoney(p.amount)}
                   </Table.Td>
-                  <Table.Td c="dimmed">{p.exchangeRate !== 1 ? `tasa ${fmtMoney(p.exchangeRate, 4)} = ${fmtMoney(p.amountBase)}` : ""}</Table.Td>
+                  <Table.Td c="dimmed">{p.exchangeRate !== 1 ? `tasa ${fmtMoney(p.exchangeRate, 4)} = ${fmtBase(p.amountBase)}` : ""}</Table.Td>
                   <Table.Td c="dimmed">{p.reference ? `ref. ${p.reference}` : ""}</Table.Td>
                 </Table.Tr>
               ))}
@@ -217,7 +218,7 @@ function Line({ label, value, strong }: Readonly<{ label: string; value: number;
         {label}
       </Text>
       <Text size="sm" fw={strong ? 700 : 400}>
-        {fmtMoney(value)}
+        {fmtBase(value)}
       </Text>
     </Group>
   );
@@ -269,7 +270,7 @@ export default function PosTicketsPage() {
       { header: "Caja / turno", cell: ({ row: { original: s } }) => <Text size="sm">{`${s.terminalCode} · ${s.sessionNumber}`}</Text> },
       { header: "Cajero", cell: ({ row: { original: s } }) => <Text size="sm">{s.cashierName ?? "—"}</Text> },
       { header: "Pagos", cell: ({ row: { original: s } }) => <Text size="sm">{methodsLabel(s.methods)}</Text> },
-      { header: "Total", cell: ({ row: { original: s } }) => <Text size="sm" fw={700} td={s.status === "voided" ? "line-through" : undefined}>{fmtMoney(s.grandTotal)}</Text> },
+      { header: "Total", cell: ({ row: { original: s } }) => <Text size="sm" fw={700} td={s.status === "voided" ? "line-through" : undefined}>{fmtBase(s.grandTotal)}</Text> },
       {
         header: "Estado",
         size: 100,

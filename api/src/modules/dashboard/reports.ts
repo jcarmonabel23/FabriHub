@@ -29,6 +29,8 @@ interface Column {
   width?: number;
   /** Suma la columna en la fila de totales */
   total?: boolean;
+  /** Montos: columna de la fila con su moneda; sin ella, están en la moneda base */
+  currencyKey?: string;
 }
 
 interface Ctx {
@@ -200,7 +202,7 @@ const REPORTS: ReportDef[] = [
       { key: "pending", header: "Pendiente", type: "qty" },
       { key: "expectedDate", header: "Esperada", type: "date" },
       { key: "currency", header: "Moneda", type: "text", width: 8 },
-      { key: "netAmount", header: "Neto (moneda OC)", type: "money" },
+      { key: "netAmount", header: "Neto (moneda OC)", type: "money", currencyKey: "currency" },
       { key: "netBase", header: "Neto (moneda base)", type: "money", total: true }
     ],
     rows: async ({ from, to }) =>

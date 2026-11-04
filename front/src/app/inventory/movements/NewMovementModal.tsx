@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import { ApiError } from "@clients/apiClient";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifySuccess } from "@utils/notify";
 import ProductSelect from "../components/ProductSelect";
 import { inventoryApi } from "../services/inventory.service";
@@ -251,7 +252,7 @@ export default function NewMovementModal({ opened, onClose, onCreated }: Readonl
                   )}
                   {isEntry && (
                     <Table.Td ta="right">
-                      <Text size="sm">{fmtMoney((Number(l.quantity) || 0) * (Number(l.unitCost) || 0))}</Text>
+                      <Text size="sm">{fmtBase((Number(l.quantity) || 0) * (Number(l.unitCost) || 0))}</Text>
                     </Table.Td>
                   )}
                   <Table.Td>
@@ -270,7 +271,7 @@ export default function NewMovementModal({ opened, onClose, onCreated }: Readonl
           </Button>
           {total !== null && (
             <Text fw={700}>
-              Total: <span className="font-mono">{fmtMoney(total)}</span>
+              Total: <span className="font-mono">{fmtBase(total)}</span>
             </Text>
           )}
         </Group>

@@ -17,6 +17,7 @@ import ProductSelect from "@/app/inventory/components/ProductSelect";
 import type { ProductOption } from "@/app/inventory/types";
 import { confirmDelete } from "@utils/confirm";
 import { fmtMoney, fmtPct } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { PRODUCTION_ACTIONS } from "../productionActions";
 import { productionApi } from "../services/production.service";
@@ -115,13 +116,13 @@ function FormulaDrawer({ id, onClose, onEdit, onNewVersion }: Readonly<{ id: str
                       </Table.Td>
                       <Table.Td ta="right">{l.scrapPct ? fmtPct(l.scrapPct) : "—"}</Table.Td>
                       <Table.Td>{l.stageCode ?? "—"}</Table.Td>
-                      <Table.Td ta="right">{fmtMoney(l.quantity * (1 + l.scrapPct / 100) * l.stdCost)}</Table.Td>
+                      <Table.Td ta="right">{fmtBase(l.quantity * (1 + l.scrapPct / 100) * l.stdCost)}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
               </Table>
               <Text size="sm" ta="right" mt="xs">
-                Materiales: <b>{fmtMoney(f.materialCost)}</b> · por {f.unitCode}: <b>{fmtMoney(f.materialUnitCost, 4)}</b>
+                Materiales: <b>{fmtBase(f.materialCost)}</b> · por {f.unitCode}: <b>{fmtBase(f.materialUnitCost, 4)}</b>
               </Text>
             </Tabs.Panel>
             <Tabs.Panel value="explode" pt="sm">

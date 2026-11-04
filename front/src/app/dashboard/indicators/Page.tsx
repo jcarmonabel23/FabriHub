@@ -33,6 +33,7 @@ import dayjs from "dayjs";
 import { useNavigate } from "react-router-dom";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtCur } from "@utils/money";
 import KpiCard from "../atoms/KpiCard";
 import { DASHBOARD_ACTIONS } from "../dashboardActions";
 import { dashboardApi } from "../dashboard.service";
@@ -98,7 +99,7 @@ function RankTable({ rows, label, money }: Readonly<{ rows: { name: string; valu
             </Table.Td>
             <Table.Td className="text-right">
               <Text size="sm" fw={600}>
-                {fmtMoney(r.value)}
+                {fmtCur(r.value, money)}
               </Text>
             </Table.Td>
           </Table.Tr>
@@ -249,7 +250,7 @@ export default function IndicatorsPage() {
                     { name: "cost", label: "Costo", color: "gray.5" },
                     { name: "margin", label: "Margen", color: "teal.5" }
                   ]}
-                  valueFormatter={(v) => fmtMoney(v)}
+                  valueFormatter={(v) => fmtCur(v, cur)}
                   withLegend
                   tickLine="y"
                 />
@@ -282,7 +283,7 @@ export default function IndicatorsPage() {
                   data={d.purchases.monthly.map((m) => ({ ...m, label: month(m.month) }))}
                   dataKey="label"
                   series={[{ name: "amount", label: "Compras", color: "orange.5" }]}
-                  valueFormatter={(v) => fmtMoney(v)}
+                  valueFormatter={(v) => fmtCur(v, cur)}
                   tickLine="y"
                 />
               </div>

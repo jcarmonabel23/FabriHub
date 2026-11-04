@@ -11,9 +11,13 @@ import { Router } from "express";
 import { requirePermission as can } from "../../security/authorize.js";
 import { alertsSummary, listAlerts, listRuns, runNow } from "./alerts.js";
 import { getIndicators } from "./indicators.js";
+import { dashboardRates } from "./rates.js";
 import { downloadReport, listReports, previewReport } from "./reports.js";
 
 export const dashboardRoutes = Router();
+
+// Tipo de cambio oficial: lo ve toda sesión con empresa (tarjeta del tablero, como la campana)
+dashboardRoutes.get("/exchange-rates", dashboardRates);
 
 dashboardRoutes.get("/indicators", can("DSH_INDICATORS", "view"), getIndicators);
 

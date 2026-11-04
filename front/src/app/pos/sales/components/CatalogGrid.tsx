@@ -14,6 +14,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { IconBarcode, IconPackage } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError } from "@utils/notify";
 import { posApi } from "../../services/pos.service";
 import type { CatalogItem } from "../../types";
@@ -128,7 +129,7 @@ const CatalogGrid = forwardRef<HTMLInputElement, Props>(function CatalogGrid({ t
                 </Text>
                 <div className="mt-1 flex items-end justify-between gap-1">
                   <Text fw={700} size="md">
-                    {price === null ? "Sin precio" : fmtMoney(price)}
+                    {price === null ? "Sin precio" : fmtBase(price)}
                   </Text>
                   {left !== null && (
                     <Badge size="xs" variant="light" color={left > 0 ? "teal" : "red"}>

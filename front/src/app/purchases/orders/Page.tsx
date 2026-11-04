@@ -20,6 +20,7 @@ import { coreAuth } from "@auth/store/coreAuth";
 import { useCan, useCanAccess } from "@modules/access-control/useCan";
 import { useCountry } from "@modules/country/country";
 import { fmtDateTime, fmtMoney, fmtPct } from "@utils/format";
+import { fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { PURCHASES_ACTIONS } from "../purchasesActions";
 import { purchasesApi } from "../services/purchases.service";
@@ -185,7 +186,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
                     {fmtMoney(l.quantity, 2)} {l.unitCode}
                   </Table.Td>
                   <Table.Td ta="right">
-                    {fmtMoney(l.unitPrice, 4)}
+                    {fmtCur(l.unitPrice, o.currencyCode, 4)}
                     {l.discountPct > 0 && (
                       <Text size="xs" c="dimmed">
                         − {fmtPct(l.discountPct)}
@@ -194,7 +195,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
                   </Table.Td>
                   <Table.Td ta="right">{fmtPct(l.taxRate)}</Table.Td>
                   <Table.Td ta="right" fw={600}>
-                    {fmtMoney(l.netAmount)}
+                    {fmtCur(l.netAmount, o.currencyCode)}
                   </Table.Td>
                   <Table.Td ta="right">
                     <Text size="sm" c={l.quantityPending > 0 ? "orange" : "teal"}>
@@ -209,18 +210,18 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
           <Stack gap={2} className="rounded-lg bg-gray-50 p-3" maw={420} ml="auto" w="100%">
             <Group justify="space-between">
               <Text size="sm">Base imponible</Text>
-              <Text size="sm">{fmtMoney(o.taxableAmount)}</Text>
+              <Text size="sm">{fmtCur(o.taxableAmount, o.currencyCode)}</Text>
             </Group>
             {o.taxesDetail.taxes.map((x) => (
               <Group key={x.rate} justify="space-between">
                 <Text size="sm">IVA {fmtPct(x.rate)}</Text>
-                <Text size="sm">{fmtMoney(x.amount)}</Text>
+                <Text size="sm">{fmtCur(x.amount, o.currencyCode)}</Text>
               </Group>
             ))}
             <Group justify="space-between">
               <Text fw={700}>Total {o.currencyCode}</Text>
               <Text fw={800} ff="monospace">
-                {fmtMoney(o.total)}
+                {fmtCur(o.total, o.currencyCode)}
               </Text>
             </Group>
             {o.taxesDetail.withholdings.map((w) => (
@@ -229,7 +230,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
                   {w.label}
                 </Text>
                 <Text size="sm" c="red">
-                  − {fmtMoney(w.amount)}
+                  − {fmtCur(w.amount, o.currencyCode)}
                 </Text>
               </Group>
             ))}
@@ -237,7 +238,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
               <Group justify="space-between">
                 <Text fw={700}>Neto a pagar</Text>
                 <Text fw={800} ff="monospace">
-                  {fmtMoney(o.payable)}
+                  {fmtCur(o.payable, o.currencyCode)}
                 </Text>
               </Group>
             )}
@@ -316,7 +317,7 @@ export default function OrdersPage() {
         header: "Total",
         cell: ({ row: { original: o } }) => (
           <Text size="sm" fw={600} ta="right">
-            {o.currencySymbol} {fmtMoney(o.total)}
+            {fmtCur(o.total, o.currencyCode)}
           </Text>
         )
       },

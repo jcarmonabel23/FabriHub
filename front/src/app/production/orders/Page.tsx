@@ -22,6 +22,7 @@ import { useCan, useCanAccess } from "@modules/access-control/useCan";
 import { QUALITY_COLOR, QUALITY_LABEL, type QualityStatus } from "@/app/inventory/types";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { PRODUCTION_ACTIONS } from "../productionActions";
 import { productionApi, type OrderAction } from "../services/production.service";
@@ -159,11 +160,11 @@ function ConfirmModal({ order, onClose, onDone }: Readonly<{ order: ProductionOr
           )}
           <Textarea label="Observaciones" autosize minRows={1} value={f.notes} onChange={(e) => setF({ ...f, notes: e.currentTarget.value })} />
           <Stack gap={2} className="rounded-lg bg-gray-50 p-3">
-            <Group justify="space-between"><Text size="sm">Materiales consumidos</Text><Text size="sm">{fmtMoney(material)}</Text></Group>
-            <Group justify="space-between"><Text size="sm">Mano de obra + costo fabril (horas reales)</Text><Text size="sm">{fmtMoney(conversion)}</Text></Group>
+            <Group justify="space-between"><Text size="sm">Materiales consumidos</Text><Text size="sm">{fmtBase(material)}</Text></Group>
+            <Group justify="space-between"><Text size="sm">Mano de obra + costo fabril (horas reales)</Text><Text size="sm">{fmtBase(conversion)}</Text></Group>
             <Group justify="space-between">
               <Text fw={700}>Costo unitario de entrada</Text>
-              <Text fw={800} ff="monospace">{Number(f.quantity) > 0 ? fmtMoney((material + conversion) / Number(f.quantity), 4) : "—"}</Text>
+              <Text fw={800} ff="monospace">{Number(f.quantity) > 0 ? fmtBase((material + conversion) / Number(f.quantity), 4) : "—"}</Text>
             </Group>
           </Stack>
           <Alert variant="light" color="petrol" icon={<IconInfoCircle size={18} />}>
@@ -188,10 +189,10 @@ function CostRow({ label, std, real, bold }: Readonly<{ label: string; std: numb
   return (
     <Table.Tr>
       <Table.Td fw={bold ? 700 : undefined}>{label}</Table.Td>
-      <Table.Td ta="right" fw={bold ? 700 : undefined}>{fmtMoney(std)}</Table.Td>
-      <Table.Td ta="right" fw={bold ? 700 : undefined}>{real === null ? "—" : fmtMoney(real)}</Table.Td>
+      <Table.Td ta="right" fw={bold ? 700 : undefined}>{fmtBase(std)}</Table.Td>
+      <Table.Td ta="right" fw={bold ? 700 : undefined}>{real === null ? "—" : fmtBase(real)}</Table.Td>
       <Table.Td ta="right">
-        {diff === null ? "—" : <Text size="sm" fw={bold ? 700 : undefined} c={diff > 0.005 ? "red" : diff < -0.005 ? "teal" : undefined}>{diff > 0 ? "+" : ""}{fmtMoney(diff)}</Text>}
+        {diff === null ? "—" : <Text size="sm" fw={bold ? 700 : undefined} c={diff > 0.005 ? "red" : diff < -0.005 ? "teal" : undefined}>{diff > 0 ? "+" : ""}{fmtBase(diff)}</Text>}
       </Table.Td>
     </Table.Tr>
   );
@@ -450,16 +451,16 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
               <Stack gap={2} mt="sm" className="rounded-lg bg-gray-50 p-3">
                 <Group justify="space-between">
                   <Text size="sm">Costo estándar por {o.unitCode}</Text>
-                  <Text size="sm">{fmtMoney((o.stdMaterialCost + o.stdLaborCost + o.stdOverheadCost) / o.quantityPlanned, 4)}</Text>
+                  <Text size="sm">{fmtBase((o.stdMaterialCost + o.stdLaborCost + o.stdOverheadCost) / o.quantityPlanned, 4)}</Text>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm">Costo real por {o.unitCode}</Text>
-                  <Text size="sm">{o.realUnitCost === null ? "—" : fmtMoney(o.realUnitCost, 4)}</Text>
+                  <Text size="sm">{o.realUnitCost === null ? "—" : fmtBase(o.realUnitCost, 4)}</Text>
                 </Group>
                 {o.variance !== null && (
                   <Group justify="space-between">
                     <Text fw={700}>Variación (real − estándar de lo fabricado)</Text>
-                    <Text fw={800} c={o.variance > 0 ? "red" : "teal"}>{o.variance > 0 ? "+" : ""}{fmtMoney(o.variance)} {o.variance > 0 ? "desfavorable" : "favorable"}</Text>
+                    <Text fw={800} c={o.variance > 0 ? "red" : "teal"}>{o.variance > 0 ? "+" : ""}{fmtBase(o.variance)} {o.variance > 0 ? "desfavorable" : "favorable"}</Text>
                   </Group>
                 )}
               </Stack>
@@ -487,7 +488,7 @@ function OrderDrawer({ id, onClose, onEdit }: Readonly<{ id: string | null; onCl
                         </Table.Td>
                         <Table.Td><Badge size="sm" variant="light" color={m.direction === "in" ? "teal" : "orange"}>{m.conceptName}</Badge></Table.Td>
                         <Table.Td>{m.warehouseCode}</Table.Td>
-                        <Table.Td ta="right">{fmtMoney(m.totalCost)}</Table.Td>
+                        <Table.Td ta="right">{fmtBase(m.totalCost)}</Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>

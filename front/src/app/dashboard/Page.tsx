@@ -6,7 +6,7 @@
  * Las raíces cuyas pantallas están todas fuera de servicio se muestran deshabilitadas con
  * "Próximamente": así el tablero también cuenta el plan por fases de la tesis.
  * Arriba, los accesos a las pantallas propias del Tablero (Indicadores, Alertas, Reportes) que el
- * usuario tenga asignadas; al lado, sus avisos.
+ * usuario tenga asignadas; al lado, sus avisos y el tipo de cambio oficial.
  */
 
 import { Text } from "@mantine/core";
@@ -16,6 +16,7 @@ import { ModuleIcon } from "@modules/icons/moduleIcons";
 import { accessibleChildren, isOffline, visibleRoots } from "@modules/access-control/moduleTree";
 import DashboardGridButtons from "./atoms/DashboardGridButtons";
 import DashboardAlerts from "./components/DashboardAlerts";
+import DashboardRates from "./components/DashboardRates";
 import DashboardUser from "./components/DashboardUser";
 
 export default function DashboardPage() {
@@ -76,6 +77,7 @@ export default function DashboardPage() {
       </div>
       <aside className="w-full lg:w-80 space-y-6">
         <DashboardAlerts />
+        <DashboardRates />
         <DashboardUser />
       </aside>
     </div>

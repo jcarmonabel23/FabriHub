@@ -16,13 +16,14 @@ import dayjs from "dayjs";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import { TbEmpty, TbLoader } from "@atoms/tables/DataTable";
 import { fmtMoney } from "@utils/format";
+import { baseCurrency, fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { DASHBOARD_ACTIONS } from "../dashboardActions";
 import { type ReportColumn, type ReportInfo, dashboardApi } from "../dashboard.service";
 
 const QC_LABEL: Record<string, string> = { quarantine: "Cuarentena", approved: "Aprobado", rejected: "Rechazado", on_hold: "Retenido" };
 
-function cell(c: ReportColumn, v: unknown): string {
+function cell(c: ReportColumn, v: unknown, row?: Record<string, unknown>): string {
   if (v === null || v === undefined || v === "") return "—";
   switch (c.type) {
     case "int":
@@ -30,7 +31,7 @@ function cell(c: ReportColumn, v: unknown): string {
     case "qty":
       return new Intl.NumberFormat("es-VE", { maximumFractionDigits: 3 }).format(Number(v));
     case "money":
-      return fmtMoney(Number(v));
+      return fmtCur(Number(v), c.currencyKey ? String(row?.[c.currencyKey] ?? "") : baseCurrency());
     case "pct":
       return `${fmtMoney(Number(v) * 100, 1)} %`;
     case "date":
@@ -165,7 +166,7 @@ export default function ReportsPage() {
                         <Table.Tr key={i}>
                           {p.columns.map((c) => (
                             <Table.Td key={c.key} className={c.type === "text" ? "" : "text-right whitespace-nowrap"}>
-                              {cell(c, r[c.key])}
+                              {cell(c, r[c.key], r)}
                             </Table.Td>
                           ))}
                         </Table.Tr>

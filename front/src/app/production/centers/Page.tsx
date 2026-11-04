@@ -18,6 +18,7 @@ import CatalogTab from "@/app/settings/commercial/components/CatalogTab";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { confirmDelete } from "@utils/confirm";
 import { fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { PRODUCTION_ACTIONS } from "../productionActions";
 import { productionApi } from "../services/production.service";
@@ -210,8 +211,8 @@ function WorkCentersTab() {
       { header: "Tipo", cell: ({ row: { original: w } }) => <Badge variant="light" color="gray">{w.typeName}</Badge> },
       { header: "Centro de producción", cell: ({ row: { original: w } }) => <Text size="sm">{w.productionCenterCode}</Text> },
       { header: "Capacidad", cell: ({ row: { original: w } }) => <Text size="sm">{fmtMoney(w.capacityHoursDay, 1)} h/día · {fmtMoney(w.efficiencyPct, 0)}%</Text> },
-      { header: "M. de obra/h", cell: ({ row: { original: w } }) => <Text size="sm" ta="right">{fmtMoney(w.laborRate)}</Text> },
-      { header: "Fabril/h", cell: ({ row: { original: w } }) => <Text size="sm" ta="right">{fmtMoney(w.overheadRate)}</Text> },
+      { header: "M. de obra/h", cell: ({ row: { original: w } }) => <Text size="sm" ta="right">{fmtBase(w.laborRate)}</Text> },
+      { header: "Fabril/h", cell: ({ row: { original: w } }) => <Text size="sm" ta="right">{fmtBase(w.overheadRate)}</Text> },
       { header: "Estado", cell: ({ row: { original: w } }) => <Badge color={w.isActive ? "teal" : "gray"} variant="light">{w.isActive ? "Activo" : "Inactivo"}</Badge> },
       {
         id: "actions",

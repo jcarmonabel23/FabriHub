@@ -17,6 +17,7 @@ import { settingsApi } from "@/app/settings/services/settings.service";
 import ProductSelect from "@/app/inventory/components/ProductSelect";
 import type { ProductOption } from "@/app/inventory/types";
 import { fmtMoney, fmtPct } from "@utils/format";
+import { fmtCur } from "@utils/money";
 import { notifySuccess } from "@utils/notify";
 import { salesApi } from "../services/sales.service";
 import type { SalesOrderDetail } from "../types";
@@ -208,7 +209,7 @@ export default function SalesOrderEditor({
                         decimalScale={4}
                         decimalSeparator=","
                         thousandSeparator="."
-                        placeholder={pl ? fmtMoney(pl.unitPrice, 4) : "Automático"}
+                        placeholder={pl ? fmtCur(pl.unitPrice, cur?.code, 4) : "Automático"}
                         value={l.unitPrice}
                         onChange={(v) => setLine(l.key, { unitPrice: v })}
                       />
@@ -226,7 +227,7 @@ export default function SalesOrderEditor({
                     </Table.Td>
                     <Table.Td ta="right">
                       <Text size="sm" fw={600}>
-                        {pl ? fmtMoney(pl.net) : ""}
+                        {pl ? fmtCur(pl.net, cur?.code) : ""}
                       </Text>
                     </Table.Td>
                     <Table.Td>
@@ -266,27 +267,27 @@ export default function SalesOrderEditor({
                 )}
                 <Group justify="space-between">
                   <Text size="sm">Subtotal</Text>
-                  <Text size="sm">{fmtMoney(t.subtotal)}</Text>
+                  <Text size="sm">{fmtCur(t.subtotal, cur?.code)}</Text>
                 </Group>
                 {t.discountAmount > 0 && (
                   <Group justify="space-between">
                     <Text size="sm">Descuento</Text>
-                    <Text size="sm">− {fmtMoney(t.discountAmount)}</Text>
+                    <Text size="sm">− {fmtCur(t.discountAmount, cur?.code)}</Text>
                   </Group>
                 )}
                 {t.taxes.map((x) => (
                   <Group key={x.rate} justify="space-between">
                     <Text size="sm">
-                      IVA {fmtPct(x.rate)} sobre {fmtMoney(x.base)}
+                      IVA {fmtPct(x.rate)} sobre {fmtCur(x.base, cur?.code)}
                     </Text>
-                    <Text size="sm">{fmtMoney(x.amount)}</Text>
+                    <Text size="sm">{fmtCur(x.amount, cur?.code)}</Text>
                   </Group>
                 ))}
                 <Divider my={4} />
                 <Group justify="space-between">
                   <Text fw={700}>Total {cur?.code}</Text>
                   <Text fw={800} ff="monospace">
-                    {fmtMoney(t.total)}
+                    {fmtCur(t.total, cur?.code)}
                   </Text>
                 </Group>
                 {t.withholdings.map((w) => (
@@ -295,7 +296,7 @@ export default function SalesOrderEditor({
                       Retiene el cliente: {w.label}
                     </Text>
                     <Text size="sm" c="red">
-                      − {fmtMoney(w.amount)}
+                      − {fmtCur(w.amount, cur?.code)}
                     </Text>
                   </Group>
                 ))}
@@ -303,7 +304,7 @@ export default function SalesOrderEditor({
                   <Group justify="space-between">
                     <Text fw={700}>Neto a cobrar</Text>
                     <Text fw={800} ff="monospace">
-                      {fmtMoney(t.payable)}
+                      {fmtCur(t.payable, cur?.code)}
                     </Text>
                   </Group>
                 )}

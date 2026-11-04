@@ -17,7 +17,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate } from "react-router-dom";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import { useCan } from "@modules/access-control/useCan";
-import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtDateTime } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import CloseSessionModal from "../components/CloseSessionModal";
 import { POS_ACTIONS } from "../posActions";
 import { posApi } from "../services/pos.service";
@@ -114,7 +115,7 @@ export default function PosSalesPage() {
         right={
           <Group gap="xs">
             <Badge size="lg" variant="light" color="teal">
-              {session.totals.completed} venta(s) · {fmtMoney(session.totals.grandTotal)}
+              {session.totals.completed} venta(s) · {fmtBase(session.totals.grandTotal)}
             </Badge>
             {canSessions("close") && (
               <Button variant="default" color="red" leftSection={<IconLockOpen size={16} />} onClick={() => setClosing(true)}>

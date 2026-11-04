@@ -18,6 +18,7 @@ import DataTable from "@atoms/tables/DataTable";
 import { settingsApi } from "@/app/settings/services/settings.service";
 import { useCan } from "@modules/access-control/useCan";
 import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { INVENTORY_ACTIONS } from "../inventoryActions";
 import { inventoryApi } from "../services/inventory.service";
@@ -128,17 +129,17 @@ function MovementDrawer({ id, onClose, onOpen }: Readonly<{ id: string | null; o
                   <Table.Td ta="right">
                     {fmtMoney(l.quantity, 2)} {l.unitCode}
                   </Table.Td>
-                  <Table.Td ta="right">{fmtMoney(l.unitCost, 4)}</Table.Td>
+                  <Table.Td ta="right">{fmtBase(l.unitCost, 4)}</Table.Td>
                   <Table.Td ta="right" fw={600}>
-                    {fmtMoney(l.totalCost)}
+                    {fmtBase(l.totalCost)}
                   </Table.Td>
                   <Table.Td ta="right">
                     <Text size="xs">
-                      {m.warehouseCode}: {fmtMoney(l.balanceAfter, 2)} @ {fmtMoney(l.avgCostAfter, 4)}
+                      {m.warehouseCode}: {fmtMoney(l.balanceAfter, 2)} @ {fmtBase(l.avgCostAfter, 4)}
                     </Text>
                     {l.targetBalanceAfter !== null && (
                       <Text size="xs">
-                        {m.targetWarehouseCode}: {fmtMoney(l.targetBalanceAfter, 2)} @ {fmtMoney(l.targetAvgCostAfter ?? 0, 4)}
+                        {m.targetWarehouseCode}: {fmtMoney(l.targetBalanceAfter, 2)} @ {fmtBase(l.targetAvgCostAfter ?? 0, 4)}
                       </Text>
                     )}
                   </Table.Td>
@@ -148,7 +149,7 @@ function MovementDrawer({ id, onClose, onOpen }: Readonly<{ id: string | null; o
           </Table>
           <Group justify="flex-end">
             <Text fw={700}>
-              Costo total: <span className="font-mono">{fmtMoney(m.totalCost)}</span>
+              Costo total: <span className="font-mono">{fmtBase(m.totalCost)}</span>
             </Text>
           </Group>
         </Stack>
@@ -227,7 +228,7 @@ export default function MovementsPage() {
         )
       },
       { header: "Líneas", size: 70, cell: ({ row: { original: m } }) => <Text size="sm">{m.lines}</Text> },
-      { header: "Costo total", cell: ({ row: { original: m } }) => <Text size="sm" fw={600}>{fmtMoney(m.totalCost)}</Text> },
+      { header: "Costo total", cell: ({ row: { original: m } }) => <Text size="sm" fw={600}>{fmtBase(m.totalCost)}</Text> },
       {
         header: "Estado",
         size: 100,

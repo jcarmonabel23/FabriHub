@@ -13,7 +13,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import DataTable from "@atoms/tables/DataTable";
 import { useCan } from "@modules/access-control/useCan";
-import { fmtDateTime, fmtMoney } from "@utils/format";
+import { fmtDateTime } from "@utils/format";
+import { fmtBase } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { EINV_STATUS, einvoiceApi, type EinvDocument } from "../einvoice.service";
 
@@ -65,7 +66,7 @@ export default function DocumentsPanel() {
         )
       },
       { header: "Cliente", cell: ({ row: { original: d } }) => <Text size="sm">{d.customerName}</Text> },
-      { header: "Total", cell: ({ row: { original: d } }) => <Text size="sm">{fmtMoney(d.total)}</Text> },
+      { header: "Total", cell: ({ row: { original: d } }) => <Text size="sm">{fmtBase(d.total)}</Text> },
       {
         header: "Hacienda",
         size: 140,
@@ -162,7 +163,7 @@ function DocumentDrawer({ doc, onClose, onChange }: Readonly<{ doc: EinvDocument
           <Field label="Clave" value={doc.clave} mono />
           {doc.referenceClave && <Field label="Anula el comprobante" value={`${doc.referenceConsecutive} · ${doc.reason ?? ""}`} mono />}
           <Field label="Cliente" value={`${doc.customerName} (${doc.customerTaxId})`} />
-          <Field label="Total" value={fmtMoney(doc.total)} />
+          <Field label="Total" value={fmtBase(doc.total)} />
           <Field label="Emitido" value={fmtDateTime(doc.issuedAt)} />
           {doc.sentAt && <Field label="Enviado a Hacienda" value={fmtDateTime(doc.sentAt)} />}
           {doc.decidedAt && <Field label="Respuesta de Hacienda" value={fmtDateTime(doc.decidedAt)} />}
