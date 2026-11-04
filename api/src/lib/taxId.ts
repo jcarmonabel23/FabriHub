@@ -32,6 +32,8 @@ export interface Country {
   features: { igtf?: boolean; withholdings?: boolean; specialTaxpayer?: boolean; eInvoice?: boolean; fiscalDoc?: boolean };
   /** Fuente oficial de la tasa de cambio (fase 16); null = solo carga manual */
   rateProvider: "BCV" | "BCCR" | null;
+  /** Tasa referencial en moneda local por moneda ({ USD: 505 }): solo si no hay oficial ni manual */
+  referenceRates: Record<string, number>;
 }
 
 const TTL_MS = 5 * 60_000;
@@ -41,7 +43,8 @@ export async function countries(): Promise<Country[]> {
   if (!cache || Date.now() - cache.at > TTL_MS) {
     const rows = await query<Country>(
       `SELECT code, name, currency_code AS "currencyCode", timezone, tax_id_label AS "taxIdLabel",
-              id_types AS "idTypes", features, rate_provider AS "rateProvider"
+              id_types AS "idTypes", features, rate_provider AS "rateProvider",
+              reference_rates AS "referenceRates"
          FROM catalogs_countries WHERE is_active ORDER BY order_list, name`
     );
     cache = { at: Date.now(), byCode: new Map(rows.map((c) => [c.code.trim(), { ...c, code: c.code.trim() }])) };

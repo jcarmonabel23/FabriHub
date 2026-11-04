@@ -20,6 +20,7 @@ import { badRequest, conflict, forbidden, handler, idParams, notFound, pageQuery
 import { authOf, txCtx } from "../../security/context.js";
 import { exchangeRate } from "../purchases/fiscal.js";
 import { pendingPrinterDocs } from "../fiscal/service.js";
+import { ensureReferenceRates } from "../settings/exchangeRates.js";
 
 export const METHODS = ["cash", "card", "mobile", "transfer"] as const;
 export type PaymentMethod = (typeof METHODS)[number];
@@ -143,7 +144,9 @@ export const mySession = handler({}, async ({ req }) => {
        FROM pos_terminals t JOIN warehouses w ON w.id = t.warehouse_id LEFT JOIN price_lists pl ON pl.id = t.price_list_id
       WHERE t.is_active ORDER BY t.code`
   );
-  // Monedas cobrables hoy (la base y las que tienen tasa) y los parámetros que la pantalla muestra
+  // Monedas cobrables hoy (la base y las que tienen tasa) y los parámetros que la pantalla muestra.
+  // Sin tasa oficial ni manual, el dólar y el euro entran con la referencial del país
+  await ensureReferenceRates(authOf(req).userId);
   const currencies = await query(
     `SELECT * FROM (
        SELECT c.id, c.code, c.name, c.symbol, (c.id = co.base_currency_id) AS "isBase",

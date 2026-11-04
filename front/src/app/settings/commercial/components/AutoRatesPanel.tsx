@@ -27,7 +27,8 @@ const ACTION: Record<RateRun["rates"][number]["action"], string> = {
   inserted: "nueva",
   updated: "actualizada",
   unchanged: "sin cambio",
-  kept_manual: "se mantuvo la manual"
+  kept_manual: "se mantuvo la manual",
+  reference: "referencial (sin tasa oficial)"
 };
 
 export default function AutoRatesPanel({ baseCode }: Readonly<{ baseCode: string }>) {

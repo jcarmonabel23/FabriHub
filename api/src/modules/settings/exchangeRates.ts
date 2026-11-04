@@ -12,7 +12,9 @@
  *   · BCCR (Costa Rica): API SDDE con token propio de la empresa; indicador 318 (venta) o 317 (compra).
  *     El euro sale del indicador 333 (dólares por euro) × el del dólar; si no responde, se omite.
  * Una tasa cargada a mano nunca se reemplaza (is_automatic = FALSE); la consulta la reporta como
- * «kept_manual». Cada consulta queda en exchange_rate_runs; si la última falló, el detector de
+ * «kept_manual». Si una moneda de referencia (dólar, euro) no tiene ninguna tasa vigente porque la
+ * fuente no respondió o falta el token, se registra para hoy la referencial del país
+ * (catalogs_countries.reference_rates, source = 'REF'); la siguiente consulta oficial la reemplaza. Cada consulta queda en exchange_rate_runs; si la última falló, el detector de
  * alertas avisa (RATES_FAILED).
  */
 
@@ -158,7 +160,10 @@ async function readSecret(key: string): Promise<string | null> {
 
 // ------------------------------------------------------------------ Consulta
 
-type Action = "inserted" | "updated" | "unchanged" | "kept_manual";
+type Action = "inserted" | "updated" | "unchanged" | "kept_manual" | "reference";
+
+/** Origen de una tasa referencial (no oficial) */
+export const REFERENCE_SOURCE = "REF";
 
 interface RunRate {
   currency: string;
@@ -189,8 +194,17 @@ const running = new Set<string>();
 const settingValue = async <T>(key: string, fallback: T): Promise<T> =>
   (await one<{ value: T | null }>(`SELECT fn_parameter('SETTINGS', $1) AS value`, [key]))?.value ?? fallback;
 
-/** Convierte cotizaciones locales a la moneda base y las registra; devuelve qué pasó con cada una */
-async function storeQuotes(provider: RateProvider, quotes: Quote[], userId: string | null): Promise<{ rates: RunRate[]; skipped: string[] }> {
+/**
+ * Convierte cotizaciones en moneda `local` a la moneda base y las registra con `source`; devuelve qué
+ * pasó con cada una. Con `only`, registra solo esas monedas.
+ */
+async function storeQuotes(
+  local: string,
+  source: string,
+  quotes: Quote[],
+  userId: string | null,
+  only?: Set<string>
+): Promise<{ rates: RunRate[]; skipped: string[] }> {
   const base = (await one<{ code: string }>(
     `SELECT cur.code FROM companies c JOIN catalogs_currencies cur ON cur.id = c.base_currency_id WHERE c.id = fn_current_company()`
   ))!.code.trim();
@@ -206,7 +220,7 @@ async function storeQuotes(provider: RateProvider, quotes: Quote[], userId: stri
   // Por fecha: unidades locales por 1 unidad de cada moneda (la local vale 1)
   const byDate = new Map<string, Map<string, number>>();
   for (const q of valid) {
-    if (!byDate.has(q.valueDate)) byDate.set(q.valueDate, new Map([[provider.local, 1]]));
+    if (!byDate.has(q.valueDate)) byDate.set(q.valueDate, new Map([[local, 1]]));
     byDate.get(q.valueDate)!.set(q.currency, q.perUnit);
   }
 
@@ -218,7 +232,7 @@ async function storeQuotes(provider: RateProvider, quotes: Quote[], userId: stri
       continue;
     }
     for (const [currency, local] of perUnit) {
-      if (currency === base || !idOf.has(currency)) continue;
+      if (currency === base || !idOf.has(currency) || (only && !only.has(currency))) continue;
       out.push({ currencyId: idOf.get(currency)!, currency, rateDate: date, rate: Number((local / basePer).toFixed(8)) });
     }
   }
@@ -237,7 +251,7 @@ async function storeQuotes(provider: RateProvider, quotes: Quote[], userId: stri
         await client.query(
           `INSERT INTO currencies_rates (currency_id, rate_date, rate, source, is_automatic, value_date, created_by)
            VALUES ($1, $2, $3, $4, TRUE, $2, NULLIF($5, '')::uuid)`,
-          [r.currencyId, r.rateDate, r.rate, provider.code, userId ?? ""]
+          [r.currencyId, r.rateDate, r.rate, source, userId ?? ""]
         );
         action = "inserted";
       } else if (!existing.is_automatic) {
@@ -247,7 +261,7 @@ async function storeQuotes(provider: RateProvider, quotes: Quote[], userId: stri
       } else {
         await client.query(
           `UPDATE currencies_rates SET rate = $3, source = $4, value_date = $2 WHERE currency_id = $1 AND rate_date = $2`,
-          [r.currencyId, r.rateDate, r.rate, provider.code]
+          [r.currencyId, r.rateDate, r.rate, source]
         );
         action = "updated";
       }
@@ -289,7 +303,7 @@ export async function runRates(trigger: "schedule" | "manual", userId: string | 
         bccrSide: (await settingValue<string>("rates_bccr_side", "sell")) === "buy" ? "buy" : "sell",
         baseUrl
       });
-      const stored = await storeQuotes(provider, quotes, userId);
+      const stored = await storeQuotes(provider.local, provider.code, quotes, userId);
       rates = stored.rates;
       if (stored.skipped.length) {
         status = rates.length ? "partial" : "error";
@@ -302,6 +316,12 @@ export async function runRates(trigger: "schedule" | "manual", userId: string | 
           ? err.message
           : `No se pudo consultar ${provider.name}: ${(err as { code?: string }).code ?? (err as Error).message}`.slice(0, 600);
       if (!(err instanceof ProviderError)) logger.warn({ err, provider: provider.code }, "[rates] la consulta falló");
+    }
+    const reference = await ensureReferenceRates(userId);
+    if (reference.length) {
+      rates = [...rates, ...reference];
+      const note = `Sin tasa vigente: se registró la referencial de ${reference.map((r) => r.currency).join(", ")}`;
+      message = (message ? `${message}. ${note}` : note).slice(0, 600);
     }
     await withTx({ userId }, (client) =>
       client.query(`UPDATE exchange_rate_runs SET status = $2, message = $3, rates = $4, finished_at = NOW() WHERE id = $1`, [
@@ -318,22 +338,57 @@ export async function runRates(trigger: "schedule" | "manual", userId: string | 
 }
 
 /**
+ * @function ensureReferenceRates
+ * @description Si una moneda con tasa referencial en el país (y la local, si la base es otra) no tiene
+ * ninguna tasa vigente (≤ hoy), registra para hoy la referencial. No consulta la red; un fallo solo se anota.
+ */
+export async function ensureReferenceRates(userId: string | null = null): Promise<RunRate[]> {
+  try {
+    const country = await currentCountry();
+    const refs = Object.entries(country.referenceRates ?? {}).filter(([, v]) => Number(v) > 0);
+    if (!refs.length) return [];
+    const missing = await query<{ code: string }>(
+      `SELECT TRIM(c.code) AS code FROM catalogs_currencies c CROSS JOIN companies co
+        WHERE co.id = fn_current_company() AND c.is_active AND c.id <> co.base_currency_id AND TRIM(c.code) = ANY($1::text[])
+          AND NOT EXISTS (SELECT 1 FROM currencies_rates r WHERE r.currency_id = c.id AND r.rate_date <= CURRENT_DATE)`,
+      [[...refs.map(([code]) => code), country.currencyCode]]
+    );
+    if (!missing.length) return [];
+    const today = (await one<{ d: string }>(`SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d`))!.d;
+    const quotes = refs.map(([currency, perUnit]) => ({ currency, valueDate: today, perUnit: Number(perUnit) }));
+    const { rates } = await storeQuotes(country.currencyCode, REFERENCE_SOURCE, quotes, userId, new Set(missing.map((m) => m.code)));
+    if (rates.length) logger.info({ rates }, "[rates] se registró la tasa referencial");
+    return rates.map((r) => ({ ...r, action: "reference" as const }));
+  } catch (err) {
+    logger.warn({ err }, "[rates] no se pudo registrar la tasa referencial");
+    return [];
+  }
+}
+
+/**
  * @function refreshIfStale
- * @description Para la tarjeta del tablero: si la empresa no tiene la tasa del día y no se consultó en
- * la última hora, lanza una consulta en segundo plano (como la programada). Devuelve si la lanzó.
+ * @description Para la tarjeta del tablero: si la empresa no tiene la tasa oficial del día y no se consultó
+ * en la última hora, lanza una consulta en segundo plano (como la programada). Devuelve si la lanzó.
+ * Si no la lanza (sin fuente o sin token), deja registradas las referenciales que falten.
  */
 export async function refreshIfStale(): Promise<boolean> {
   const country = await currentCountry();
   const provider = country.rateProvider ? PROVIDERS[country.rateProvider] : undefined;
-  if (!provider) return false;
   const companyId = (await one<{ id: string }>(`SELECT fn_current_company() AS id`))!.id;
   if (running.has(companyId)) return true;
-  const stale = await one<{ stale: boolean }>(
-    `SELECT NOT EXISTS (SELECT 1 FROM currencies_rates WHERE rate_date >= CURRENT_DATE)
-        AND NOT EXISTS (SELECT 1 FROM exchange_rate_runs WHERE started_at > NOW() - INTERVAL '1 hour') AS stale`
-  );
-  if (!stale?.stale) return false;
-  if (provider.needsToken && !(await one(`SELECT 1 FROM company_secrets WHERE key = $1`, [BCCR_TOKEN]))) return false;
+  const launch =
+    provider &&
+    (!provider.needsToken || Boolean(await one(`SELECT 1 FROM company_secrets WHERE key = $1`, [BCCR_TOKEN]))) &&
+    (
+      await one<{ stale: boolean }>(
+        `SELECT NOT EXISTS (SELECT 1 FROM currencies_rates WHERE rate_date >= CURRENT_DATE AND source IS DISTINCT FROM '${REFERENCE_SOURCE}')
+            AND NOT EXISTS (SELECT 1 FROM exchange_rate_runs WHERE started_at > NOW() - INTERVAL '1 hour') AS stale`
+      )
+    )?.stale;
+  if (!launch) {
+    await ensureReferenceRates();
+    return false;
+  }
   void runRates("schedule", null).catch((err) => {
     if ((err as { code?: string }).code !== "RATES_RUNNING") logger.warn({ err, companyId }, "[rates] la consulta desde el tablero falló");
   });

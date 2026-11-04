@@ -54,10 +54,18 @@ export default function DashboardRates() {
                 {r.rateDate && (
                   <Text size="xs" c="dimmed">
                     Vigente desde {dayjs(r.rateDate).format("DD/MM/YYYY")}
-                    {!r.official && (
-                      <Badge ml={6} size="xs" color="gray" variant="light">
-                        manual
-                      </Badge>
+                    {r.reference ? (
+                      <Tooltip label="La fuente oficial no respondió: es un valor de referencia" multiline w={220}>
+                        <Badge ml={6} size="xs" color="orange" variant="light">
+                          referencial
+                        </Badge>
+                      </Tooltip>
+                    ) : (
+                      !r.official && (
+                        <Badge ml={6} size="xs" color="gray" variant="light">
+                          manual
+                        </Badge>
+                      )
                     )}
                   </Text>
                 )}

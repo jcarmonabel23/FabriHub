@@ -156,6 +156,8 @@ export interface ReferenceRate {
   source: string | null;
   /** La trajo la consulta automática (BCV/BCCR); si no, se cargó a mano */
   official: boolean;
+  /** Tasa referencial del país: la fuente oficial no respondió */
+  reference: boolean;
   /** Ya publicada para un día posterior (el BCV publica la del día hábil siguiente) */
   next: { rate: number | null; rateDate: string } | null;
 }

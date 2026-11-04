@@ -19,7 +19,7 @@ import { fmtBase, fmtCur } from "@utils/money";
 import { notifyError } from "@utils/notify";
 import SupervisorFields, { SUPERVISOR_ERRORS, supervisorReady } from "../../components/SupervisorFields";
 import { posApi } from "../../services/pos.service";
-import { PAYMENT_METHOD_LABEL, type PaymentInput, type PaymentMethod, type PosCurrency, type PosSale, type PosSettings, type QuoteInput, type SupervisorInput } from "../../types";
+import { foreignEquivalents, PAYMENT_METHOD_LABEL, type PaymentInput, type PaymentMethod, type PosCurrency, type PosSale, type PosSettings, type QuoteInput, type SupervisorInput } from "../../types";
 
 interface Props {
   opened: boolean;
@@ -109,7 +109,22 @@ export default function PaymentModal({ opened, onClose, base, currencies, settin
     <Modal opened={opened} onClose={onClose} title="Cobrar" size="xl" closeOnClickOutside={false}>
       <Stack>
         <Group grow align="stretch">
-          <Box label="Total a pagar" value={q ? `${baseCur?.code} ${fmtMoney(q.grandTotal)}` : "…"} hint={q?.igtf.amount ? `incluye IGTF ${q.igtf.rate}%: ${fmtMoney(q.igtf.amount)}` : undefined} />
+          <Box
+            label="Total a pagar"
+            value={q ? `${baseCur?.code} ${fmtMoney(q.grandTotal)}` : "…"}
+            hint={
+              q
+                ? [
+                    foreignEquivalents(q.grandTotal, currencies)
+                      .map((e) => fmtCur(e.amount, e.code))
+                      .join(" · "),
+                    q.igtf.amount ? `incluye IGTF ${q.igtf.rate}%: ${fmtMoney(q.igtf.amount)}` : ""
+                  ]
+                    .filter(Boolean)
+                    .join(" — ") || undefined
+                : undefined
+            }
+          />
           <Box label="Pagado" value={q ? fmtCur(q.paid, baseCur?.code) : "…"} />
           {q && q.change > 0 ? (
             <Box label="Vuelto" value={`${changeCur?.code} ${fmtMoney(q.changeInCurrency)}`} tone="teal" hint={changeCur && !changeCur.isBase ? `= ${fmtMoney(q.change)} ${baseCur?.code}` : undefined} />

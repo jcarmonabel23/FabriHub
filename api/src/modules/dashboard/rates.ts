@@ -8,13 +8,14 @@
  * banco central: local por X = tasa(X) / tasa(local), con tasa(base) = 1.
  * La tasa vigente es la última con fecha ≤ hoy; si ya hay una publicada para después (el BCV
  * publica la del día hábil siguiente), se informa como «próxima». Sin la del día, pide una consulta
- * en segundo plano (refreshIfStale) y la tarjeta vuelve a preguntar.
+ * en segundo plano (refreshIfStale) y la tarjeta vuelve a preguntar. Si la fuente no responde, la tasa
+ * es la referencial del país (reference = true).
  */
 
 import { one, query } from "../../db.js";
 import { handler } from "../../lib/http.js";
 import { currentCountry } from "../../lib/taxId.js";
-import { refreshIfStale } from "../settings/exchangeRates.js";
+import { REFERENCE_SOURCE, refreshIfStale } from "../settings/exchangeRates.js";
 
 /** Monedas de referencia de la tarjeta */
 const REFERENCE = ["USD", "EUR"];
@@ -78,7 +79,8 @@ export const dashboardRates = handler({}, async () => {
       rate: dated ? value(false) : null,
       rateDate: dated?.rateDate ?? null,
       source: dated?.source ?? null,
-      official: Boolean(dated?.isAutomatic),
+      official: Boolean(dated?.isAutomatic) && dated?.source !== REFERENCE_SOURCE,
+      reference: dated?.source === REFERENCE_SOURCE,
       next: nextDated ? { rate: value(true), rateDate: nextDated.rateDate } : null
     };
   });

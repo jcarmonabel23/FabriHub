@@ -122,6 +122,14 @@ export interface PosCurrency {
   rate: number;
 }
 
+/** Un monto en moneda base expresado en las demás monedas cobrables: «USD 118,00 · EUR 101,50» */
+export function foreignEquivalents(amountBase: number, currencies: PosCurrency[]): { code: string; amount: number }[] {
+  return currencies
+    .filter((c) => !c.isBase && c.rate > 0)
+    .map((c) => ({ code: c.code.trim(), amount: Math.round((amountBase / c.rate) * 100) / 100 }))
+    .sort((a, b) => Number(b.code === "USD") - Number(a.code === "USD"));
+}
+
 export interface PosSettings {
   maxDiscountPct: number;
   igtfEnabled: boolean;

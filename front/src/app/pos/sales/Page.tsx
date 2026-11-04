@@ -132,6 +132,7 @@ export default function PosSalesPage() {
           quoting={quote.isFetching || input !== debounced}
           quoteError={input && quote.error ? (quote.error as Error).message : null}
           maxDiscountPct={me.data.settings.maxDiscountPct}
+          currencies={me.data.currencies}
           onPay={() => setPaying(true)}
         />
       </div>

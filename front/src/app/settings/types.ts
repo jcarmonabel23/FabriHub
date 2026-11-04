@@ -38,7 +38,7 @@ export interface RateRun {
   trigger: "schedule" | "manual";
   status: "running" | "ok" | "partial" | "error";
   message: string | null;
-  rates: { currency: string; rateDate: string; rate: number; action: "inserted" | "updated" | "unchanged" | "kept_manual" }[];
+  rates: { currency: string; rateDate: string; rate: number; action: "inserted" | "updated" | "unchanged" | "kept_manual" | "reference" }[];
   startedAt: string;
   finishedAt: string | null;
   createdBy: string | null;

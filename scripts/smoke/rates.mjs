@@ -82,7 +82,8 @@ export async function run() {
     const act = (r, cur) => r.json?.rates?.find((x) => x.currency === cur)?.action;
     check("consulta al BCV: correcta y con la fecha valor de hoy", r1.json?.status === "ok" && r1.json?.rates?.every((x) => x.rateDate === todayIn("America/Caracas")), r1.json);
     check("el dólar cargado a mano hoy se mantiene", act(r1, "USD") === "kept_manual", r1.json?.rates);
-    check("el euro se registra (44,25 Bs.)", act(r1, "EUR") === "inserted" && r1.json.rates.find((x) => x.currency === "EUR").rate === 44.25, r1.json?.rates);
+    // El punto de venta (módulo anterior) ya dejó la referencial del euro: la oficial la reemplaza
+    check("el euro se registra (44,25 Bs.) y reemplaza la referencial", ["inserted", "updated"].includes(act(r1, "EUR")) && r1.json.rates.find((x) => x.currency === "EUR").rate === 44.25, r1.json?.rates);
     check("monedas fuera del catálogo (yuan) se ignoran", !r1.json?.rates?.some((x) => x.currency === "CNY"));
     const e1 = (await eurRates())[0];
     check("la tasa queda marcada como automática, fuente BCV", e1?.isAutomatic === true && e1?.source === "BCV" && e1?.valueDate === todayIn("America/Caracas"), e1);
@@ -135,6 +136,16 @@ export async function run() {
       check("parámetro compra/venta visible en Costa Rica", (await params()).some((x) => x.key === "rates_bccr_side"));
       const noToken = await runRates(`${MOCK}/bccr`);
       check("sin token → consulta fallida que lo explica", noToken.json?.status === "error" && /token/i.test(noToken.json?.message ?? "") && mock.bccrHits.length === 0, noToken.json);
+      // Sin tasa vigente queda la referencial del país (la registra esta consulta o, antes, el tablero o la caja)
+      const cardRef = (await call("GET", "/dashboard/exchange-rates", { token: admin })).json;
+      const refCard = (c) => cardRef?.rates?.find((x) => x.code === c);
+      check(
+        "sin token ni tasa: referencial del país (₡505 por dólar, ₡585 por euro), marcada como tal",
+        refCard("USD")?.rate === 505 && refCard("EUR")?.rate === 585 && refCard("USD")?.reference === true && refCard("USD")?.official === false && cardRef?.refreshing === false,
+        cardRef
+      );
+      const posMe = (await call("GET", "/pos/me", { token: admin })).json;
+      check("punto de venta: el dólar y el euro se pueden cobrar con la referencial", ["USD", "EUR"].every((c) => posMe?.currencies?.some((x) => x.code.trim() === c && x.rate > 0)), posMe?.currencies);
 
       const short = await call("PUT", "/settings/exchange-rates/token", { token: admin, body: { token: "corto" } });
       check("token demasiado corto → 400", short.status === 400, short.json);
@@ -152,7 +163,7 @@ export async function run() {
       const crOf = (c) => cardCr?.rates?.find((x) => x.code === c);
       check("tarjeta en Costa Rica: colones por dólar y por euro, fuente BCCR, oficiales", cardCr?.local?.code === "CRC" && cardCr?.provider?.code === "BCCR" && crOf("USD")?.rate === 512.34 && crOf("EUR")?.rate === 553.3272 && crOf("USD")?.official === true, cardCr);
       check("euro en colones = indicador 333 (dólares por euro) × dólar", mock.bccrHits.at(-1)?.indicator === "333" && eurCr?.rate === Number((1.08 * 512.34).toFixed(8)), ok.json?.rates);
-      check("tipo de cambio en colones registrado", ok.json?.status === "ok" && usdCr?.rate === 512.34 && usdCr?.action === "inserted", ok.json);
+      check("tipo de cambio en colones registrado: reemplaza la referencial del día", ok.json?.status === "ok" && usdCr?.rate === 512.34 && usdCr?.action === "updated", ok.json);
 
       await setParam("rates_bccr_side", "buy");
       const buy = await runRates(`${MOCK}/bccr`);

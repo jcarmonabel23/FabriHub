@@ -10,9 +10,9 @@
 import { ActionIcon, Alert, Badge, Button, Divider, Group, Image, NumberInput, Popover, ScrollArea, Stack, Text, Tooltip } from "@mantine/core";
 import { IconAlertTriangle, IconCash, IconMinus, IconPackage, IconPercentage, IconPlus, IconShieldLock, IconTrash } from "@tabler/icons-react";
 import { fmtMoney } from "@utils/format";
-import { fmtBase } from "@utils/money";
+import { fmtBase, fmtCur } from "@utils/money";
 import { useCart } from "../../store/cart";
-import type { Quote } from "../../types";
+import { foreignEquivalents, type PosCurrency, type Quote } from "../../types";
 import CustomerPicker from "./CustomerPicker";
 
 interface Props {
@@ -20,10 +20,12 @@ interface Props {
   quoting: boolean;
   quoteError: string | null;
   maxDiscountPct: number;
+  /** Monedas cobrables: el total se muestra también en las extranjeras */
+  currencies: PosCurrency[];
   onPay: () => void;
 }
 
-export default function CartPanel({ quote, quoting, quoteError, maxDiscountPct, onPay }: Readonly<Props>) {
+export default function CartPanel({ quote, quoting, quoteError, maxDiscountPct, currencies, onPay }: Readonly<Props>) {
   const { lines, customer, discountPct, setQuantity, setLineDiscount, remove, setCustomer, setDiscount, clear } = useCart();
   const quoted = new Map((quote?.lines ?? []).map((l) => [l.productId, l]));
   const stale = quoting || !quote || quote.lines.length !== lines.length;
@@ -160,6 +162,15 @@ export default function CartPanel({ quote, quoting, quoteError, maxDiscountPct, 
             {quote && lines.length ? fmtBase(quote.total) : fmtBase(0)}
           </Text>
         </Group>
+        {quote && lines.length > 0 && (
+          <Group justify="flex-end" gap="md">
+            {foreignEquivalents(quote.total, currencies).map((e) => (
+              <Text key={e.code} size="sm" fw={600} c="dimmed" ff="monospace">
+                {fmtCur(e.amount, e.code)}
+              </Text>
+            ))}
+          </Group>
+        )}
         {quote?.needsSupervisor && (
           <Group gap={4}>
             <IconShieldLock size={14} className="text-amber-700" />

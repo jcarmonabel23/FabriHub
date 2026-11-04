@@ -92,8 +92,8 @@ export default function RatesDrawer({ currency, baseCode, onClose }: Readonly<{ 
                     {fmtMoney(r.rate, 4)}
                   </Table.Td>
                   <Table.Td>
-                    {r.source ?? "—"}
-                    {r.isAutomatic && (
+                    {r.source === "REF" ? "Referencial" : (r.source ?? "—")}
+                    {r.isAutomatic && r.source !== "REF" && (
                       <Badge size="xs" variant="light" color="teal" ml={6}>
                         automática
                       </Badge>
