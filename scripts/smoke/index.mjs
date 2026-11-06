@@ -20,7 +20,9 @@ import * as pos from "./pos.mjs";
 import * as countries from "./countries.mjs";
 import * as rates from "./rates.mjs";
 import * as ticket from "./ticket.mjs";
+import * as reports from "./reports.mjs";
 import * as einvoice from "./einvoice.mjs";
+import * as reportsMore from "./reports-more.mjs";
 import * as ratelimit from "./ratelimit.mjs";
 
 const SUITES = [
@@ -39,7 +41,9 @@ const SUITES = [
   ["Fase 15 · País de la empresa", countries],
   ["Fase 16 · Tipos de cambio automáticos", rates],
   ["Fase 17 · Ticket imprimible", ticket],
+  ["Reportes del día a día", reports],
   ["Fase 18 · Comprobantes electrónicos (CR)", einvoice],
+  ["Reportes de análisis y gestión", reportsMore],
   ["Límite por IP", ratelimit]
 ];
 

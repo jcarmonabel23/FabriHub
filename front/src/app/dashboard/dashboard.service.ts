@@ -177,18 +177,57 @@ export interface ReportInfo {
   code: string;
   name: string;
   description: string;
+  /** Área del menú: Ventas, Caja, Inventario, Compras, Producción, Tablero */
+  group: string;
   module: string;
   moduleName: string;
   ranged: boolean;
+  /** Días del rango por defecto */
+  defaultDays: number | null;
+}
+
+export type ReportValueType = "text" | "int" | "qty" | "money" | "pct" | "date" | "datetime";
+
+export interface ReportKpi {
+  key: string;
+  label: string;
+  type: ReportValueType;
+  value: number | string | null;
+  /** Equivalente en dólares */
+  usd: number | null;
+  /** Valor en el período anterior */
+  previous: number | string | null;
+  /** Variación relativa contra el período anterior */
+  change: number | null;
+  better: "up" | "down" | null;
+  help: string | null;
+  /** Moneda del monto si no es la base */
+  currency: string | null;
+}
+
+export interface ReportChart {
+  title: string;
+  /** heatmap: una fila por punto y una columna por serie, con la intensidad según el valor */
+  kind: "bar" | "line" | "donut" | "heatmap";
+  type: ReportValueType;
+  horizontal: boolean;
+  /** Moneda de los montos si no es la base */
+  currency: string | null;
+  series: { key: string; label: string }[];
+  data: ({ label: string } & Record<string, string | number | null>)[];
 }
 
 export interface ReportColumn {
   key: string;
   header: string;
-  type: "text" | "int" | "qty" | "money" | "pct" | "date" | "datetime";
+  type: ReportValueType;
   total?: boolean;
   /** Montos: columna de la fila con su moneda; sin ella, moneda base */
   currencyKey?: string;
+  /** Equivalente en dólares */
+  usd?: boolean;
+  /** Montos siempre en esta moneda */
+  currency?: string;
 }
 
 export interface ReportPreview {
@@ -197,6 +236,9 @@ export interface ReportPreview {
   ranged: boolean;
   from: string;
   to: string;
+  /** Código de la moneda base */
+  base: string;
+  summary: { kpis: ReportKpi[]; charts: ReportChart[]; previous: { from: string; to: string } | null };
   columns: ReportColumn[];
   rows: Record<string, unknown>[];
   total: number;

@@ -56,6 +56,27 @@ body {
  * border-gray-200, bg-brand-50…) leen variables --color-*: aquí se invierte la escala de grises y
  * los tonos claros pasan a transparencias, para no tocar cada pantalla.
  */
+/*
+ * Colores de gráficos por categoría (identidad de cada serie, en orden fijo). Paleta validada para
+ * daltonismo en claro y en oscuro (cada modo con sus propios tonos); una serie sola usa el petrol.
+ */
+:root {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-single: #167c94;
+}
+:root[data-mantine-color-scheme="dark"] {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-single: #3797ae;
+}
+
 :root[data-mantine-color-scheme="dark"] {
   color-scheme: dark;
   --color-gray-50: #1a1b1e;

@@ -1,13 +1,15 @@
 /**
  * @project FabriHub - Front
  * @file src/app/dashboard/reports/Page.tsx
- * @description Tablero → Reportes (DSH_REPORTS): vista previa y descarga en Excel
+ * @description Tablero → Reportes (DSH_REPORTS): resumen con indicadores y gráficos, vista previa y
+ * descarga en Excel
  *
  * El Excel lo arma la API con el permiso `download` y el alcance de datos del usuario; aquí solo se
- * elige el reporte y el rango. La lista muestra únicamente los reportes cuyo módulo de origen puede ver.
+ * elige el reporte y el rango. La lista, agrupada por área, muestra únicamente los reportes cuyo
+ * módulo de origen puede ver. Cada reporte trae su rango por defecto (p. ej., 7 días el cierre diario).
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Badge, Button, Group, Paper, ScrollArea, SimpleGrid, Stack, Table, Text, ThemeIcon, UnstyledButton } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { IconDownload, IconFileSpreadsheet, IconTable } from "@tabler/icons-react";
@@ -15,32 +17,15 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import ModuleHeader from "@atoms/layouts/ModuleHeader";
 import { TbEmpty, TbLoader } from "@atoms/tables/DataTable";
-import { fmtMoney } from "@utils/format";
-import { baseCurrency, fmtCur } from "@utils/money";
 import { notifyError, notifySuccess } from "@utils/notify";
 import { DASHBOARD_ACTIONS } from "../dashboardActions";
 import { type ReportColumn, type ReportInfo, dashboardApi } from "../dashboard.service";
+import ReportSummary from "./components/ReportSummary";
+import { fmtValue } from "./format";
 
-const QC_LABEL: Record<string, string> = { quarantine: "Cuarentena", approved: "Aprobado", rejected: "Rechazado", on_hold: "Retenido" };
-
-function cell(c: ReportColumn, v: unknown, row?: Record<string, unknown>): string {
-  if (v === null || v === undefined || v === "") return "—";
-  switch (c.type) {
-    case "int":
-      return fmtMoney(Number(v), 0);
-    case "qty":
-      return new Intl.NumberFormat("es-VE", { maximumFractionDigits: 3 }).format(Number(v));
-    case "money":
-      return fmtCur(Number(v), c.currencyKey ? String(row?.[c.currencyKey] ?? "") : baseCurrency());
-    case "pct":
-      return `${fmtMoney(Number(v) * 100, 1)} %`;
-    case "date":
-      return dayjs(String(v)).format("DD/MM/YYYY");
-    case "datetime":
-      return dayjs(String(v)).format("DD/MM/YYYY HH:mm");
-    default:
-      return c.key === "qualityStatus" ? (QC_LABEL[String(v)] ?? String(v)) : String(v);
-  }
+function cell(c: ReportColumn, v: unknown, base: string, row?: Record<string, unknown>): string {
+  const currency = c.usd ? "USD" : (c.currency ?? (c.currencyKey ? String(row?.[c.currencyKey] ?? "") : base));
+  return fmtValue(c.type, v, currency, c.key);
 }
 
 function ReportCard({ r, active, onClick }: Readonly<{ r: ReportInfo; active: boolean; onClick: () => void }>) {
@@ -69,20 +54,35 @@ function ReportCard({ r, active, onClick }: Readonly<{ r: ReportInfo; active: bo
   );
 }
 
+const fromFor = (r: ReportInfo | null) => dayjs().subtract((r?.defaultDays ?? 31) - 1, "day").format("YYYY-MM-DD");
+
 export default function ReportsPage() {
   const reports = useQuery({ queryKey: ["dashboard", "reports"], queryFn: dashboardApi.reports });
   const [code, setCode] = useState<string | null>(null);
-  const [from, setFrom] = useState<string | null>(dayjs().subtract(30, "day").format("YYYY-MM-DD"));
+  const [from, setFrom] = useState<string | null>(null);
   const [to, setTo] = useState<string | null>(dayjs().format("YYYY-MM-DD"));
 
   const selected = useMemo(() => reports.data?.find((r) => r.code === code) ?? reports.data?.[0] ?? null, [reports.data, code]);
+  // Al cambiar de reporte, el rango vuelve al suyo por defecto
+  useEffect(() => {
+    if (!selected) return;
+    setFrom(fromFor(selected));
+    setTo(dayjs().format("YYYY-MM-DD"));
+  }, [selected]);
+
+  const groups = useMemo(() => {
+    const m = new Map<string, ReportInfo[]>();
+    for (const r of reports.data ?? []) m.set(r.group, [...(m.get(r.group) ?? []), r]);
+    return [...m.entries()];
+  }, [reports.data]);
+
   const range = useMemo(() => (selected?.ranged ? { from: from ?? undefined, to: to ?? undefined } : {}), [selected, from, to]);
   const badRange = Boolean(selected?.ranged && from && to && from > to);
 
   const preview = useQuery({
     queryKey: ["dashboard", "report-preview", selected?.code, range],
     queryFn: () => dashboardApi.preview(selected!.code, range),
-    enabled: Boolean(selected) && !badRange
+    enabled: Boolean(selected) && !badRange && (!selected?.ranged || Boolean(from))
   });
 
   const download = useMutation({
@@ -101,7 +101,7 @@ export default function ReportsPage() {
 
   return (
     <div className="p-6">
-      <ModuleHeader title="Reportes" description="Reportes gerenciales con vista previa y descarga en Excel." actions={DASHBOARD_ACTIONS} />
+      <ModuleHeader title="Reportes" description="Reportes gerenciales con indicadores, gráficos, vista previa y descarga en Excel." actions={DASHBOARD_ACTIONS} />
 
       {reports.data?.length === 0 && (
         <Alert color="gray" variant="light">
@@ -111,15 +111,22 @@ export default function ReportsPage() {
 
       {selected && (
         <SimpleGrid cols={{ base: 1, lg: 4 }} spacing="lg">
-          <Stack gap="xs">
-            {reports.data!.map((r) => (
-              <ReportCard key={r.code} r={r} active={r.code === selected.code} onClick={() => setCode(r.code)} />
+          <Stack gap="md">
+            {groups.map(([group, list]) => (
+              <Stack key={group} gap="xs">
+                <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+                  {group}
+                </Text>
+                {list.map((r) => (
+                  <ReportCard key={r.code} r={r} active={r.code === selected.code} onClick={() => setCode(r.code)} />
+                ))}
+              </Stack>
             ))}
           </Stack>
 
           <Paper withBorder radius="lg" p="lg" className="lg:col-span-3 min-w-0">
             <Group justify="space-between" align="flex-end" mb="md" wrap="wrap">
-              <div>
+              <div className="min-w-0 flex-1">
                 <Text fw={700} size="lg">
                   {selected.name}
                 </Text>
@@ -141,13 +148,14 @@ export default function ReportsPage() {
             </Group>
 
             {preview.isLoading && <TbLoader />}
+            {p && <ReportSummary kpis={p.summary.kpis} charts={p.summary.charts} previous={p.summary.previous} base={p.base} />}
             {p && p.total === 0 && <TbEmpty text="El reporte no tiene filas con estos filtros" />}
             {p && p.total > 0 && (
               <>
                 <Group gap="xs" mb="xs">
                   <IconTable size={16} className="text-gray-400" />
                   <Text size="xs" c="dimmed">
-                    {p.total > p.rows.length ? `Vista previa de ${p.rows.length} de ${p.total} filas; el Excel trae todas.` : `${p.total} fila(s).`}
+                    {p.total > p.rows.length ? `Detalle: vista previa de ${p.rows.length} de ${p.total} filas; el Excel trae todas.` : `Detalle: ${p.total} fila(s).`}
                   </Text>
                 </Group>
                 <ScrollArea type="auto" h={520}>
@@ -166,7 +174,7 @@ export default function ReportsPage() {
                         <Table.Tr key={i}>
                           {p.columns.map((c) => (
                             <Table.Td key={c.key} className={c.type === "text" ? "" : "text-right whitespace-nowrap"}>
-                              {cell(c, r[c.key], r)}
+                              {cell(c, r[c.key], p.base, r)}
                             </Table.Td>
                           ))}
                         </Table.Tr>
@@ -175,7 +183,7 @@ export default function ReportsPage() {
                         <Table.Tr className="font-bold bg-gray-50">
                           {p.columns.map((c, i) => (
                             <Table.Td key={c.key} className={c.type === "text" ? "" : "text-right whitespace-nowrap"}>
-                              {i === 0 ? "Totales" : c.key in totals ? cell(c, totals[c.key]) : ""}
+                              {i === 0 ? "Totales" : c.key in totals ? cell(c, totals[c.key], p.base) : ""}
                             </Table.Td>
                           ))}
                         </Table.Tr>

@@ -138,9 +138,18 @@ export async function run() {
 
   section("Reportes");
   const list = (await call("GET", "/dashboard/reports", { token: admin })).json;
-  check("el administrador ve los 8 reportes", list.length === 8, list.map((r) => r.code));
+  check("el administrador ve los 45 reportes de Venezuela, agrupados por área", list.length === 45 && list[0].group === "Gerencial" && list.every((r) => r.group), list.map((r) => `${r.group}:${r.code}`));
   const prev = (await call("GET", "/dashboard/reports/STOCK_VALUED/preview", { token: admin })).json;
   check("vista previa de existencias valoradas", prev.total > 0 && prev.columns.length > 5 && prev.rows[0].productCode, prev);
+  const valueKpi = prev.summary?.kpis?.find((k) => k.key === "value");
+  check(
+    "con resumen: valor del inventario = suma del detalle, gráfico por almacén y sin claves internas",
+    // Con más de 100 filas la vista previa recorta el detalle: entonces solo se exige un valor positivo
+    (prev.total > prev.rows.length ? valueKpi?.value > 0 : Math.abs(valueKpi?.value - prev.rows.reduce((t, r) => t + r.value, 0)) < 0.01) &&
+      prev.summary.charts.some((c) => c.title === "Valor por almacén") &&
+      !Object.keys(prev.rows[0]).some((k) => k.startsWith("_")),
+    prev.summary
+  );
   const xlsx = await download(admin, "/dashboard/reports/SALES/xlsx");
   check(
     "descarga en Excel (.xlsx real, con nombre de archivo)",
@@ -149,11 +158,20 @@ export async function run() {
   );
   const sales = (await call("GET", "/dashboard/reports/SALES/preview", { token: admin })).json;
   check("el reporte de ventas trae lo despachado en el rango", sales.total > 0 && sales.rows.every((r) => Math.abs(r.margin - (r.sales - r.cost)) < 0.01), sales.rows.slice(0, 2));
+  check(
+    "despachos: compara con el período anterior y da la venta en USD",
+    sales.summary?.previous?.to < sales.from && sales.summary.kpis.find((k) => k.key === "sales")?.usd > 0,
+    sales.summary
+  );
   const badRange = await call("GET", "/dashboard/reports/MOVEMENTS/preview?from=2026-12-31&to=2026-01-01", { token: admin });
   check("rango invertido → 400", badRange.status === 400, badRange.json);
 
   const listPT = (await call("GET", "/dashboard/reports", { token: almPT.token })).json.map((r) => r.code);
-  check("cada usuario ve los reportes de lo que puede consultar", listPT.includes("STOCK_VALUED") && listPT.includes("ALERTS") && !listPT.includes("PURCHASES"), listPT);
+  check(
+    "cada usuario ve los reportes de lo que puede consultar",
+    listPT.includes("STOCK_VALUED") && listPT.includes("ALERTS") && listPT.includes("REPLENISHMENT") && !listPT.includes("PURCHASES") && !listPT.includes("SALES_DAILY"),
+    listPT
+  );
   const prevPT = (await call("GET", "/dashboard/reports/STOCK_VALUED/preview", { token: almPT.token })).json;
   check("el reporte respeta el alcance por almacén", prevPT.total > 0 && prevPT.rows.every((r) => r.warehouse.startsWith("PT ")), prevPT.rows.map((r) => r.warehouse));
   const noSource = await call("GET", "/dashboard/reports/PURCHASES/preview", { token: almPT.token });
